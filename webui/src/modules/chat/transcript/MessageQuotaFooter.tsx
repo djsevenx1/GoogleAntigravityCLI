@@ -1,0 +1,411 @@
+import React, { memo, useState, useMemo, useEffect } from 'react';
+import { Zap, Sparkles, Bot, RefreshCw, Layers, Clock, ExternalLink, ShieldCheck, User } from 'lucide-react';
+import type { ChatMessage, AntigravityQuotaSnapshot, LLMProvider } from '@/shared/types';
+import { useAntigravityQuota, formatDynamicCountdown } from '@/modules/chat/hooks/useAntigravityQuota';
+import AntigravityQuotaModal from '@/modules/chat/transcript/AntigravityQuotaModal';
+
+export function formatPreciseTimeTag(str?: string | null): string {
+  if (!str) return '即将重置';
+  const s = String(str).trim();
+  if (s === '即将重置' || s.includes('即将') || s.includes('计算中') || s.includes('查询中')) return '即将重置';
+  
+  // 1. Chinese day + hour: "6天 23小时" / "6天"
+  const mDayHour = s.match(/(\d+)\s*天\s*(?:(\d+)\s*小时)?/);
+  if (mDayHour) {
+    const d = mDayHour[1];
+    const h = mDayHour[2];
+    return h && h !== '0' ? `${d}天${h}h` : `${d}天`;
+  }
+  
+  // 2. Chinese hour + min: "4小时 59分钟" / "4小时" / "59分钟"
+  const mHourMin = s.match(/(?:(\d+)\s*小时)?\s*(?:(\d+)\s*分钟)?/);
+  if (mHourMin && (mHourMin[1] || mHourMin[2])) {
+    const h = mHourMin[1];
+    const m = mHourMin[2];
+    if (h && m) return `${h}h ${m}m`;
+    if (h) return `${h}h`;
+    if (m) return `${m}m`;
+  }
+
+  // 3. English day + hour: "6 days, 23 hours"
+  const mEngDayHour = s.match(/(\d+)\s*days?(?:\s*,?\s*(\d+)\s*hours?)?/i);
+  if (mEngDayHour) {
+    const d = mEngDayHour[1];
+    const h = mEngDayHour[2];
+    return h && h !== '0' ? `${d}天${h}h` : `${d}天`;
+  }
+
+  // 4. English hour + min: "4 hours, 35 minutes" / "4h 35m"
+  const mEngHourMin = s.match(/(?:(\d+)\s*(?:hours?|h))?\s*,?\s*(?:(\d+)\s*(?:min(?:ute)?s?|m))?/i);
+  if (mEngHourMin && (mEngHourMin[1] || mEngHourMin[2])) {
+    const h = mEngHourMin[1];
+    const m = mEngHourMin[2];
+    if (h && m) return `${h}h ${m}m`;
+    if (h) return `${h}h`;
+    if (m) return `${m}m`;
+  }
+
+  return s;
+}
+
+export function formatModelDisplayName(modelId?: string | null): string {
+  if (!modelId) return 'Gemini 3.8 Flash';
+  const raw = String(modelId).replace(/^models\//, '').trim();
+  const lower = raw.toLowerCase();
+  if (lower.includes('3.8') && lower.includes('flash')) return 'Gemini 3.8 Flash';
+  if (lower.includes('3.7') && lower.includes('flash')) return 'Gemini 3.7 Flash';
+  if (lower.includes('3.6') && lower.includes('flash')) return 'Gemini 3.6 Flash';
+  if (lower.includes('3.1') && lower.includes('pro')) return 'Gemini 3.1 Pro';
+  if (lower.includes('2.5') && lower.includes('flash')) return 'Gemini 2.5 Flash';
+  if (lower.includes('2.5') && lower.includes('pro')) return 'Gemini 2.5 Pro';
+  if (lower.includes('2.0') && lower.includes('flash')) return 'Gemini 2.0 Flash';
+  if (lower.includes('2.0') && lower.includes('pro')) return 'Gemini 2.0 Pro';
+  if (lower.includes('claude-sonnet-4-6') || lower.includes('4-6-sonnet') || lower.includes('4.6-sonnet') || lower.includes('4.6 sonnet')) return 'Claude Sonnet 4.6';
+  if (lower.includes('claude-opus-4-6') || lower.includes('4-6-opus') || lower.includes('4.6-opus') || lower.includes('4.6 opus')) return 'Claude Opus 4.6';
+  if (lower.includes('claude-3-7-sonnet') || lower.includes('3.7-sonnet') || lower.includes('3.7 sonnet')) return 'Claude 3.7 Sonnet';
+  if (lower.includes('claude-3-5-sonnet') || lower.includes('3.5-sonnet') || lower.includes('3.5 sonnet')) return 'Claude 3.5 Sonnet';
+  if (lower.includes('claude-3-5-haiku') || lower.includes('3.5-haiku') || lower.includes('3.5 haiku')) return 'Claude 3.5 Haiku';
+  if (lower.includes('gpt-oss-120b') || lower.includes('gpt-oss') || lower.includes('gpt_oss')) return 'GPT-OSS 120B';
+  if (lower.includes('gpt-4o-mini') || lower.includes('gpt4o-mini')) return 'GPT-4o Mini';
+  if (lower.includes('gpt-4o') || lower.includes('gpt4o')) return 'GPT-4o';
+  if (lower.includes('o3-mini')) return 'o3-mini';
+  if (lower.includes('o1')) return 'o1';
+
+  return raw
+    .split(/[-_]/)
+    .map((s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : ''))
+    .join(' ');
+}
+
+type MessageQuotaFooterProps = {
+  message: ChatMessage;
+  provider?: LLMProvider | string;
+};
+
+const MessageQuotaFooter: React.FC<MessageQuotaFooterProps> = ({ message, provider }) => {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const isAntigravity = provider === 'antigravity' || message.provider === 'antigravity';
+
+  const rawSnap = (message.quotaSnapshot || message.meta?.quotaSnapshot) as any;
+  const actualSnap: AntigravityQuotaSnapshot | null =
+    rawSnap && typeof rawSnap === 'object' && 'data' in rawSnap && rawSnap.data
+      ? rawSnap.data
+      : rawSnap;
+
+  const targetEmail = actualSnap?.accountEmail;
+  const { quota: liveQuota, loading, isRefreshing, refreshQuota } = useAntigravityQuota(targetEmail);
+
+  // Tick every 10 seconds to update dynamic countdowns (e.g. 4h 59m -> 4h 58m)
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTick((t) => (t + 1) % 10000);
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 1. Resolve quota snapshot: message snapshot first, then fallback to liveQuota
+  const rawLive = liveQuota as any;
+  const actualLiveQuota: AntigravityQuotaSnapshot | null =
+    rawLive && typeof rawLive === 'object' && 'data' in rawLive && rawLive.data
+      ? rawLive.data
+      : rawLive;
+  const activePoolSource = actualLiveQuota || actualSnap;
+
+  // If not Antigravity and no quotaSnapshot, do not render
+  if (!activePoolSource && !isAntigravity) {
+    return null;
+  }
+
+  // 2. Resolve model name & series: check message -> meta -> snap -> localStorage -> fallback
+  const storedModel =
+    typeof window !== 'undefined'
+      ? localStorage.getItem(`${provider || message.provider || 'antigravity'}-model`)
+      : null;
+
+  const resolvedModelId =
+    message.model ||
+    message.meta?.model ||
+    actualSnap?.model ||
+    actualLiveQuota?.model ||
+    (typeof message.toolInput === 'object' && (message.toolInput as any)?.model) ||
+    storedModel ||
+    (isAntigravity ? 'gemini-3.8-flash' : '');
+
+  const rawModel = String(resolvedModelId).toLowerCase();
+
+  const isClaude = rawModel.includes('claude');
+  const isGpt = rawModel.includes('gpt') || rawModel.includes('o1') || rawModel.includes('o3') || rawModel.includes('oss');
+  const isGemini = !isClaude && !isGpt;
+
+  const modelDisplayName = formatModelDisplayName(resolvedModelId);
+
+  // 3. Resolve tokens & duration
+  const contentStr = String(message.content || '');
+  const cleanLen = contentStr.replace(/[\u200b\s]/g, '').length;
+  const estimatedTokens = Math.max(1, Math.round(cleanLen / 3.2));
+  const tokens = message.tokens || message.meta?.tokens || actualSnap?.tokens || (cleanLen > 0 ? estimatedTokens : null);
+  const duration = message.duration || message.meta?.duration || actualSnap?.duration;
+
+  // 4. Resolve strictly separated pool metrics:
+  // Gemini model -> ONLY Gemini pools (Gemini 5h + Gemini 周度)
+  // Third-party model (Claude / GPT) -> ONLY Third-party pools (Claude 5h + Claude 周度)
+  const pool5h = isGemini
+    ? (actualLiveQuota?.gemini5h || actualSnap?.gemini5h)
+    : (actualLiveQuota?.claude5h || actualSnap?.claude5h);
+  const poolWeekly = isGemini
+    ? (actualLiveQuota?.geminiWeekly || actualSnap?.geminiWeekly)
+    : (actualLiveQuota?.claudeWeekly || actualSnap?.claudeWeekly);
+
+  const h5Pct = pool5h?.percent ?? activePoolSource?.percent ?? 100;
+  const h5ResetStr = formatDynamicCountdown(pool5h?.resetTime, pool5h?.resetsIn || activePoolSource?.resetsIn, true, h5Pct);
+  const h5ResetTag = formatPreciseTimeTag(h5ResetStr);
+  const pool5hLabel = isGemini ? 'Gemini 5h' : isGpt ? 'GPT 5h' : 'Claude 5h';
+
+  const h5DisplayTag = h5ResetTag;
+
+  const weeklyPct = poolWeekly?.percent ?? 100;
+  const weeklyResetStr = formatDynamicCountdown(poolWeekly?.resetTime, poolWeekly?.resetsIn, false, weeklyPct);
+  const weeklyResetTag = formatPreciseTimeTag(weeklyResetStr);
+  const poolWeeklyLabel = isGemini ? 'Gemini周' : isGpt ? 'GPT周' : 'Claude周';
+  const weeklyDisplayTag = weeklyResetTag;
+
+  const displayEmail = targetEmail || actualLiveQuota?.accountEmail;
+
+  return (
+    <>
+      <div className="mt-2.5 flex flex-col gap-1.5 rounded-xl border border-border/60 bg-muted/35 p-2 sm:px-3 sm:py-1.5 text-xs text-muted-foreground transition-colors hover:border-border/90 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between sm:gap-x-3">
+        {/* Row 1 on mobile / Left on desktop: Model tag, tokens, duration, account email, and mobile refresh button */}
+        <div className="flex items-center justify-between gap-2 min-w-0 sm:justify-start">
+          <div className="inline-flex min-w-0 items-center gap-1.5 font-medium flex-wrap">
+            <span
+              className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold border ${
+                isClaude
+                  ? 'border-purple-500/25 bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                  : isGpt
+                  ? 'border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                  : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+              }`}
+            >
+              {isClaude ? (
+                <Sparkles className="h-3 w-3 shrink-0" />
+              ) : isGpt ? (
+                <Bot className="h-3 w-3 shrink-0" />
+              ) : (
+                <Zap className="h-3 w-3 shrink-0" />
+              )}
+              <span className="truncate max-w-[120px] sm:max-w-none">{modelDisplayName}</span>
+            </span>
+
+            {tokens != null && tokens > 0 && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="font-mono text-[11px] text-muted-foreground">{tokens.toLocaleString()} tokens</span>
+              </>
+            )}
+
+            {duration != null && duration > 0 && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="font-mono text-[11px] text-muted-foreground/80">{duration}s</span>
+              </>
+            )}
+
+            {displayEmail && (
+              <>
+                <span className="text-muted-foreground/40">·</span>
+                <span
+                  className="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground/85 border border-border/40 max-w-[130px] sm:max-w-[200px]"
+                  title={`对应 Google 账号: ${displayEmail} (每次对话完成及手动刷新均实时拉取 Google 官方云端数据)`}
+                >
+                  <User className="h-2.5 w-2.5 shrink-0 opacity-70" />
+                  <span className="truncate">{displayEmail}</span>
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Quick Refresh Button for mobile (top-right, never overlaps badges) */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void refreshQuota(true, displayEmail);
+            }}
+            disabled={loading || isRefreshing}
+            className="sm:hidden inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all shrink-0"
+            title={`点击向 Google 官方云端实时刷新额度${displayEmail ? ` (${displayEmail})` : ''}`}
+          >
+            <RefreshCw className={`h-3 w-3 ${loading || isRefreshing ? 'animate-spin text-primary' : ''}`} />
+          </button>
+        </div>
+
+        {/* Row 2 on mobile / Right on desktop: Model-specific Quota Badges + Desktop Quick Refresh */}
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 sm:gap-2">
+          <div
+            onClick={() => setDetailsOpen(true)}
+            className="flex flex-wrap cursor-pointer items-center gap-1.5 sm:gap-2 rounded-lg py-0.5 transition-all hover:bg-background/80 hover:shadow-xs"
+            title="点击查看 Google AI Pro 算力池配额详情"
+          >
+            {isGemini ? (
+              <>
+                {/* Gemini 5-Hour Rolling Pool */}
+                <div
+                  className="inline-flex items-center gap-1 sm:gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/5 px-1.5 py-0.5 text-[11px] hover:border-emerald-500/50 whitespace-nowrap shrink-0"
+                  title={`Gemini 5小时滚动算力: 剩余 ${h5Pct}% (${h5Pct >= 100 ? '额度充足满额可用 (5小时滚动池)' : `${h5ResetStr} 后刷新重置`})`}
+                >
+                  <span className="text-[10.5px] font-medium text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                    Gemini 5h
+                  </span>
+                  <div className="h-1.5 w-7 shrink-0 overflow-hidden rounded-full bg-emerald-500/20 sm:w-8">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        h5Pct <= 10
+                          ? 'bg-red-500'
+                          : 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                      }`}
+                      style={{ width: `${Math.max(4, Math.min(100, h5Pct))}%` }}
+                    />
+                  </div>
+                  <span className={`font-mono font-semibold text-[10.5px] ${h5Pct < 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'}`}>
+                    {h5Pct}%
+                  </span>
+                  <span className="font-mono text-[9.5px] text-muted-foreground/75">({h5DisplayTag})</span>
+                </div>
+
+                {/* Gemini Weekly Pool */}
+                <div
+                  className="inline-flex items-center gap-1 sm:gap-1.5 rounded-md border border-amber-500/25 bg-amber-500/5 px-1.5 py-0.5 text-[11px] hover:border-amber-500/50 whitespace-nowrap shrink-0"
+                  title={`Gemini 每周旗舰配额: 剩余 ${weeklyPct}% (${weeklyResetStr} 后刷新重置)`}
+                >
+                  <span className="text-[10.5px] font-medium text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                    Gemini周
+                  </span>
+                  <div className="h-1.5 w-7 shrink-0 overflow-hidden rounded-full bg-amber-500/20 sm:w-8">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        weeklyPct <= 10
+                          ? 'bg-red-500'
+                          : 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                      }`}
+                      style={{ width: `${Math.max(4, Math.min(100, weeklyPct))}%` }}
+                    />
+                  </div>
+                  <span className={`font-mono font-semibold text-[10.5px] ${weeklyPct < 100 ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'}`}>
+                    {weeklyPct}%
+                  </span>
+                  <span className="font-mono text-[9.5px] text-muted-foreground/75">({weeklyDisplayTag})</span>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Third-Party 5-Hour Rolling Pool */}
+                <div
+                  className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] whitespace-nowrap shrink-0 border ${
+                    isGpt
+                      ? 'border-blue-500/25 bg-blue-500/5 hover:border-blue-500/50'
+                      : 'border-purple-500/25 bg-purple-500/5 hover:border-purple-500/50'
+                  }`}
+                  title={`${pool5hLabel} 5小时滚动算力: 剩余 ${h5Pct}% (${h5Pct >= 100 ? '额度充足满额可用 (5小时滚动池)' : `${h5ResetStr} 后刷新重置`})`}
+                >
+                  <span className={`text-[10.5px] font-medium whitespace-nowrap ${
+                    isGpt ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'
+                  }`}>
+                    {pool5hLabel}
+                  </span>
+                  <div className={`h-1.5 w-7 shrink-0 overflow-hidden rounded-full sm:w-8 ${
+                    isGpt ? 'bg-blue-500/20' : 'bg-purple-500/20'
+                  }`}>
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        h5Pct <= 10
+                          ? 'bg-red-500'
+                          : isGpt
+                          ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
+                          : 'bg-gradient-to-r from-purple-500 to-violet-400'
+                      }`}
+                      style={{ width: `${Math.max(4, Math.min(100, h5Pct))}%` }}
+                    />
+                  </div>
+                  <span className={`font-mono font-semibold text-[10.5px] ${
+                    h5Pct < 100
+                      ? isGpt ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'
+                      : 'text-foreground'
+                  }`}>
+                    {h5Pct}%
+                  </span>
+                  <span className="font-mono text-[9.5px] text-muted-foreground/75">({h5DisplayTag})</span>
+                </div>
+
+                {/* Third-Party Weekly Pool */}
+                <div
+                  className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] whitespace-nowrap shrink-0 border ${
+                    isGpt
+                      ? 'border-indigo-500/25 bg-indigo-500/5 hover:border-indigo-500/50'
+                      : 'border-purple-500/25 bg-purple-500/5 hover:border-purple-500/50'
+                  }`}
+                  title={`${poolWeeklyLabel} 每周旗舰配额: 剩余 ${weeklyPct}% (${weeklyResetStr} 后刷新重置)`}
+                >
+                  <span className={`text-[10.5px] font-medium whitespace-nowrap ${
+                    isGpt ? 'text-indigo-600 dark:text-indigo-400' : 'text-purple-600 dark:text-purple-400'
+                  }`}>
+                    {poolWeeklyLabel}
+                  </span>
+                  <div className={`h-1.5 w-7 shrink-0 overflow-hidden rounded-full sm:w-8 ${
+                    isGpt ? 'bg-indigo-500/20' : 'bg-purple-500/20'
+                  }`}>
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        weeklyPct <= 10
+                          ? 'bg-red-500'
+                          : isGpt
+                          ? 'bg-gradient-to-r from-indigo-500 to-sky-400'
+                          : 'bg-gradient-to-r from-purple-500 to-pink-400'
+                      }`}
+                      style={{ width: `${Math.max(4, Math.min(100, weeklyPct))}%` }}
+                    />
+                  </div>
+                  <span className={`font-mono font-semibold text-[10.5px] ${
+                    weeklyPct < 100
+                      ? isGpt ? 'text-indigo-600 dark:text-indigo-400' : 'text-purple-600 dark:text-purple-400'
+                      : 'text-foreground'
+                  }`}>
+                    {weeklyPct}%
+                  </span>
+                  <span className="font-mono text-[9.5px] text-muted-foreground/75">({weeklyDisplayTag})</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Quick Refresh Button on desktop */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void refreshQuota(true, displayEmail);
+            }}
+            disabled={loading || isRefreshing}
+            className="hidden sm:inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all shrink-0"
+            title={`点击向 Google 官方云端实时刷新额度${displayEmail ? ` (${displayEmail})` : ''}`}
+          >
+            <RefreshCw className={`h-3 w-3 ${loading || isRefreshing ? 'animate-spin text-primary' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Quota Details Modal */}
+      {detailsOpen && (
+        <AntigravityQuotaModal
+          isOpen={detailsOpen}
+          onClose={() => setDetailsOpen(false)}
+          quota={actualLiveQuota || actualSnap}
+          onRefresh={(force) => refreshQuota(force, displayEmail)}
+          isRefreshing={loading || isRefreshing}
+        />
+      )}
+    </>
+  );
+};
+
+export default memo(MessageQuotaFooter);

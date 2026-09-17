@@ -1,48 +1,63 @@
 # Dependencies
 node_modules/
+webui/node_modules/
 
-# Runtime, sessions, tokens & secrets
+# Runtime, sessions, tokens & secrets (敏感账号凭据，绝不外传)
 config.json
 data/
+home/
 state.json
 .env
+.env.*
 auth_tokens.json
-antigravity-oauth-token
+antigravity-oauth-token*
 *.token
+*.db
+*.sqlite*
+*.sqlite3
 
-# Logs & scratch test scripts
+# Logs & temp files
 *.log
+logs/
+urnetwork/*.log
+urnetwork/socks.log
+chat-debug.log
+server.log
+sync-clash.log
+
+# Scratch workspaces & user projects
 scratch/
+workspace
+jinri_video_app
 _ui_redesign/
+backups/
+
+# Clash 订阅与节点配置（含真实代理密钥，绝不外传）
+*.yaml
+*.yanl
+clash-*
+public/sub*
+public/bpb.*
+
+# Large binaries (> 100MB exceeds GitHub limit)
+bin/antigravity
+bin/agy
+*.apk
+
+# Temporary & test scripts
 *.bak
+*.bak.*
+*.orig
 *.pre-ws
-fix-*.cjs
 test-*.js
 test-*.cjs
+fix-*.cjs
 print-*.cjs
 add-*.cjs
 update-*.cjs
 finalize-*.cjs
 
-# OS & Backups
+# OS & IDE
 .DS_Store
-backups/
-bin/
-home/
-*.apk
-*.bak.*
-jinri_video_app
-
-# Clash 订阅/节点配置（含真实代理凭据，绝不外传）
-*.yaml
-*.yanl
-clash-*
-public/sub
-public/sub_vmess
-public/bpb.*
-
-# URnetwork SOCKS5 二进制 + 账号(不外传)
-urnetwork/
-data/urn-auth.env
-start-urn-socks.sh
-proxy-toggle.txt
+.vscode/
+.idea/

@@ -2086,217 +2086,6 @@ app.post('/api/chat/abort', (req, res) => {
   send(res, 200, { ok: true, abortedCount });
 });
 
-// ---------- Streaming chat (Server-Sent Events) ----------
-app.post('/api/chat', async (req, res) => {
-  const { model, messages, effort, permissions, conversationKey, conversationId: clientConvId } = req.body || {};
-  const permRaw = String(permissions || '').trim().toLowerCase();
-
-  if (!model) return send(res, 400, { error: '缺少 model 参数' });
-  if (!Array.isArray(messages) || !messages.length) return send(res, 400, { error: '缺少 messages 数组' });
-
-  if (!(await cliAuthenticated())) {
-    debugLog('[api/chat] REJECT: cliAuthenticated=false');
-    return send(res, 401, { error: 'Antigravity CLI 未登录，请先登录 Google Antigravity（点右上角「连接」授权）' });
-  }
-  debugLog('[api/chat] authOK: cliAuthenticated=true');
-
-  if (permRaw === 'approve' || permRaw === '') { applyAutoAllow(); } else if (permRaw === 'ask') { applyAskMode(); }
-
-  const convKey = conversationKey || clientConvId || `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
-  let conversationId = clientConvId || null;
-  if (!conversationId && conversationKey) conversationId = getConversation(conversationKey);
-
-  debugLog('[api/chat] BEGIN', JSON.stringify({ model, perm: permRaw, msgs: messages.length, convKey, clientConvId: clientConvId || null }));
-
-  if (req.socket) {
-    req.socket.setKeepAlive(true, 1000);
-    req.socket.setTimeout(0);
-    req.socket.setNoDelay(true);
-  }
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no'
-  });
-
-  // 立即写入 2KB 空白注释填充，强制冲刷 Nginx/Cloudflare/NAT 中间层缓冲区
-  res.write(': ' + ' '.repeat(2048) + '\n\n');
-  res.write(`data: ${JSON.stringify({ meta: { demo: false } })}\n\n`);
-  res.write(`data: ${JSON.stringify({ delta: '\u200b' })}\n\n`);
-  if (typeof res.flushHeaders === 'function') res.flushHeaders();
-
-  // 检查是否已有正在运行的同会话后台任务（支持断线立即接管并回放）
-  let existingRun = activeRuns.get(convKey);
-  if (existingRun && existingRun.isRunning) {
-    debugLog(`[api/chat] attach subscriber to ongoing run for convKey=${convKey} (replaying ${existingRun.events.length} events)`);
-    // 立即回放所有已发生的事件
-    for (const ev of existingRun.events) {
-      try { res.write(ev); } catch (_) {}
-    }
-    const listener = (chunk) => {
-      try { res.write(chunk); } catch (_) {}
-    };
-    existingRun.listeners.add(listener);
-    req.on('close', () => {
-      existingRun.listeners.delete(listener);
-    });
-    return; // 交由后台正在跑的 run 广播输出，结束后由 run 的 finally 处理
-  }
-
-  // 新建后台 Run
-  const runAbortController = new AbortController();
-  const run = {
-    abortController: runAbortController,
-    listeners: new Set(),
-    events: [],
-    isRunning: true,
-    conversationId: conversationId || null,
-    done: false,
-    error: null
-  };
-  activeRuns.set(convKey, run);
-
-  const broadcastEvent = (evStr) => {
-    run.events.push(evStr);
-    try { res.write(evStr); } catch (_) {}
-    for (const l of run.listeners) {
-      try { l(evStr); } catch (_) {}
-    }
-  };
-
-  const listener = (chunk) => {
-    try { res.write(chunk); } catch (_) {}
-  };
-  run.listeners.add(listener);
-
-  // 关键：客户端网络瞬断时，只从广播列表中移除该 socket，绝对不 kill 正在执行的 CLI 子进程！
-  req.on('close', () => {
-    run.listeners.delete(listener);
-  });
-
-  const t0 = Date.now();
-  let currentTip = '正在思考…';
-  let lastDataAt = Date.now();
-
-  const onProgress = (p) => {
-    if (p && p.tip) currentTip = p.tip;
-    lastDataAt = Date.now();
-    const waited = Math.round((Date.now() - t0) / 1000);
-    broadcastEvent(`data: ${JSON.stringify({ progress: true, waited, tip: currentTip, ...p })}\n\n`);
-  };
-
-  const heartbeat = setInterval(() => {
-    try {
-      broadcastEvent(': keepalive\n\n');
-      if (Date.now() - lastDataAt >= 1500) {
-        const waited = Math.round((Date.now() - t0) / 1000);
-        broadcastEvent(`data: ${JSON.stringify({ progress: true, waited, tip: currentTip })}\n\n`);
-        lastDataAt = Date.now();
-      }
-    } catch (_) {}
-  }, 1000);
-
-  const RETRY = 2;
-  let deliveredAnything = false;
-  const retryDelta = (txt) => {
-    if (txt && txt !== '\u200b') deliveredAnything = true;
-    lastDataAt = Date.now();
-    broadcastEvent(`data: ${JSON.stringify({ delta: txt })}\n\n`);
-  };
-
-  const isTransient = (err) => {
-    const m = String((err && err.message) || '');
-    return /terminated due to error|Agent execution terminated|stream ended|unexpected EOF|context canceled|connection reset/i.test(m);
-  };
-
-  try {
-    let out = null;
-    for (let attempt = 0; attempt <= RETRY; attempt++) {
-      if (attempt > 0) {
-        debugLog(`[api/chat] cliProvider retry #${attempt} (previous transient failure)`);
-        broadcastEvent(`data: ${JSON.stringify({ retrying: true, attempt })}\n\n`);
-      }
-      try {
-        out = await cliProvider({
-          model, messages, effort, permissions, conversationId,
-          onDelta: retryDelta,
-          onProgress,
-          signal: runAbortController.signal,
-          onConversationId: (id) => {
-            run.conversationId = id;
-            broadcastEvent(`data: ${JSON.stringify({ conversationId: id })}\n\n`);
-          }
-        });
-        break; // 成功
-      } catch (err) {
-        if (runAbortController.signal.aborted) {
-          throw err;
-        }
-        if (attempt < RETRY && isTransient(err)) {
-          await new Promise((r) => setTimeout(r, 1500));
-          continue;
-        }
-        throw err;
-      }
-    }
-
-    debugLog(`[api/chat] cliProvider DONE in ${Date.now() - t0}ms conv=${out && out.conversationId}`);
-    if (out && out.conversationId && conversationKey) {
-      setConversation(conversationKey, out.conversationId);
-    }
-    let sseQuota = null;
-    try { sseQuota = buildLiveWindowsData(cachedGoogleProfile, getActiveAccount()); } catch(_) {}
-    broadcastEvent(`data: ${JSON.stringify({ done: true, conversationId: out ? out.conversationId : null, liveQuota: sseQuota })}\n\n`);
-    run.done = true;
-  } catch (e) {
-    debugLog(`[api/chat] cliProvider ERROR after ${Date.now() - t0}ms:`, e && e.message);
-    console.error(`[api/chat] error:`, e && e.message);
-    run.error = e;
-    if (e && e.needsPermission) {
-      broadcastEvent(`data: ${JSON.stringify({
-        meta: {
-          needsPermission: true,
-          description: '模型申请了权限操作，请选择权限策略后重试',
-          options: ["approve"],
-          toolName: e.toolName || '',
-          toolInput: e.toolInput || ''
-        },
-        error: e.message
-      })}\n\n`);
-    } else {
-      const errMsg = (e && e.message) || 'CLI 未返回内容（未知错误）';
-      const errDetails = e && (e.stack || e.details || (typeof e === 'string' ? e : ''));
-      if (/quota|limit reached|upgrade your subscription/i.test(errMsg)) {
-        broadcastEvent(`data: ${JSON.stringify({
-          meta: {
-            quotaExceeded: true,
-            description: '当前 Antigravity 账号配额已用尽。'
-          },
-          error: errMsg,
-          errorDetails: errDetails
-        })}\n\n`);
-      } else {
-        broadcastEvent(`data: ${JSON.stringify({ error: errMsg, errorDetails: errDetails })}\n\n`);
-      }
-    }
-  } finally {
-    run.done = true;
-    run.isRunning = false;
-    clearInterval(heartbeat);
-    try { res.end(); } catch (_) {}
-    for (const l of run.listeners) {
-      try { l.end?.(); } catch (_) {}
-    }
-    // 任务完成后保留 3 分钟，便于极端慢网络下重连回放
-    setTimeout(() => {
-      if (activeRuns.get(convKey) === run) {
-        activeRuns.delete(convKey);
-      }
-    }, 180000);
-  }
-});
 
 
 // ---------- 工作区文件管理与代码查看（借鉴 CloudCLI 分层按需架构） ----------
@@ -2554,8 +2343,14 @@ const server = app.listen(config.port, () => {
     try {
       const active = getActiveAccount();
       if (active) {
-        await refreshAccessToken(active.tokenData);
-        console.log(`[token-refresher] 已刷新 access_token: ${active.email}`);
+        const beforeExpiry = active.tokenData?.token?.expiry || null;
+        const refreshed = await refreshAccessToken(active.tokenData);
+        const afterExpiry = refreshed?.token?.expiry || null;
+        if (afterExpiry && afterExpiry !== beforeExpiry) {
+          console.log(`[token-refresher] 已刷新 access_token: ${active.email} (expiry→${afterExpiry})`);
+        } else {
+          console.warn(`[token-refresher] ⚠️ 刷新未推进: ${active.email} (before=${beforeExpiry} after=${afterExpiry})`);
+        }
       }
     } catch (err) {
       debugLog('[token-refresher] err:', err && err.message);
@@ -2804,6 +2599,7 @@ wss.on('connection', (ws, req) => {
       run.lastSeq = (run.lastSeq || 0) + 1;
       const eventWithSeq = { ...obj, seq: run.lastSeq };
       run.events.push(eventWithSeq);
+      if (run.events.length > 5000) run.events.splice(0, run.events.length - 5000);
       const str = JSON.stringify(eventWithSeq);
       appendStreamEvent(convKey, str); // 同步持久化到磁盘，刷新后即使 activeRuns 没命中也能回放
       for (const l of run.listeners) {
@@ -3230,7 +3026,7 @@ wss.on('connection', (ws, req) => {
       for (const l of run.listeners) {
         try { l.end?.(); } catch (_) {}
       }
-      setTimeout(() => { if (activeRuns.get(convKey) === run) activeRuns.delete(convKey); }, 180000);
+      setTimeout(() => { if (activeRuns.get(convKey) === run) activeRuns.delete(convKey); }, 300000);
     }
   });
 

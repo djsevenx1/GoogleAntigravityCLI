@@ -1,0 +1,16 @@
+import express from 'express';
+/** Creates thin system routes that delegate update execution to the service. */
+export function createSystemRouter(systemUpdateService) {
+    const router = express.Router();
+    router.post('/update', async (_request, response, next) => {
+        try {
+            const result = await systemUpdateService.updateSystem();
+            response.status(result.success ? 200 : 500).json(result);
+        }
+        catch (error) {
+            next(error);
+        }
+    });
+    return router;
+}
+//# sourceMappingURL=system.routes.js.map

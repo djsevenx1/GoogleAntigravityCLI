@@ -137,14 +137,15 @@ flowchart TD
 
 ```bash
 # 1. 克隆代码仓库
-git clone https://github.com/djsevenx1/google-antigravity-webui.git
-cd google-antigravity-webui
+git clone https://github.com/djsevenx1/GoogleAntigravityCLI.git
+cd GoogleAntigravityCLI
 
 # 2. 安装项目依赖
 npm install
 
-# 3. 复制并调整配置文件
+# 3. 复制并调整配置文件模板
 cp config.json.example config.json
+cp urn-auth.env.example data/urn-auth.env  # 若需使用内置 URnetwork SOCKS5 代理
 ```
 
 修改 `config.json` 中的安全配置：

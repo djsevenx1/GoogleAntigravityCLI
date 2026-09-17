@@ -4,8 +4,7 @@ cd "$(dirname "$0")"
 export HOME="$(pwd)/home"
 
 PORT="${PORT:-3100}"
-LOCKFILE="/tmp/antigravity-webui-keepalive.lock"
-
+LOCKFILE="/tmp/antigravity-webui-keepalive-v2.lock"
 # 单例锁:如果已有 keepalive 在跑,直接退出
 exec 200>"$LOCKFILE"
 flock -n 200 || { echo "[keepalive] 已有实例在跑,退出"; exit 0; }
@@ -52,25 +51,9 @@ if [ -x "$URNETWORK_SOCKS" ]; then
         sleep 3
       fi
     done
-  ) &
+  ) 200>&- &
   echo "[socks] 守护进程 PID=$!"
 fi
 
-while true; do
-  COUNT=$((COUNT + 1))
-  echo "[keepalive] 启动 #$COUNT PORT=$PORT"
-  # 代理 env 注入 server 进程：agy spawn 继承 process.env，agy 自动更新后无需重启代理仍生效
-  PROXY_TOGGLE="$(cat "$(pwd)/proxy-toggle.txt" 2>/dev/null | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
-  if [ "$PROXY_TOGGLE" = "yes" ] || [ "$PROXY_TOGGLE" = "on" ] || [ "$PROXY_TOGGLE" = "true" ]; then
-    export ALL_PROXY="socks5://127.0.0.1:19999"
-    export HTTPS_PROXY="socks5://127.0.0.1:19999"
-    export HTTP_PROXY="socks5://127.0.0.1:19999"
-    export NO_PROXY="127.0.0.1,localhost,::1"
-    export no_proxy="127.0.0.1,localhost,::1"
-  else
-    unset ALL_PROXY HTTPS_PROXY HTTP_PROXY NO_PROXY no_proxy
-  fi
-  PORT=$PORT node server.js
-  echo "[keepalive] server 退出(_code=$?),2秒后重启"
-  sleep 2
-done
+echo "[keepalive] 准备启动现代化 Antigravity WebUI (端口 3100)..."
+exec /bin/bash "$(cd "$(dirname "$0")" && pwd)/webui/run-3100-server.sh"

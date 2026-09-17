@@ -249,6 +249,7 @@ const _userCollapsedDetailsKeys = new Set();
 function getToolCallStableKey(t, index, prefix = '') {
   if (!t) return `${prefix}tool_idx_${index}`;
   if (t._key) return `${prefix}${t._key}`;
+  if (t.toolId) return `${prefix}tool_toolId_${t.toolId}`;
   if (t.id) return `${prefix}tool_id_${t.id}`;
   if (t.toolCallId) return `${prefix}tool_call_${t.toolCallId}`;
   if (t.callId) return `${prefix}tool_call_${t.callId}`;
@@ -3081,7 +3082,10 @@ async function runConversationTurn(text, appendUserMsg = true) {
             // 收集工具执行事件
             if (data.toolName) {
               let existing = null;
-              if (data.stepIndex != null) {
+              if (data.toolId) {
+                existing = toolEvents.find(e => e.toolId === data.toolId);
+              }
+              if (!existing && data.stepIndex != null) {
                 existing = toolEvents.find(e => e.stepIndex === data.stepIndex);
               }
               if (!existing && toolEvents.length > 0) {
@@ -3091,6 +3095,7 @@ async function runConversationTurn(text, appendUserMsg = true) {
                 }
               }
               if (existing) {
+                if (data.toolId) existing.toolId = data.toolId;
                 if (data.toolInput && Object.keys(data.toolInput).length) existing.input = data.toolInput;
                 if (data.rawInput) existing.rawInput = data.rawInput;
                 if (data.toolOutput) existing.output = data.toolOutput;
@@ -3110,6 +3115,7 @@ async function runConversationTurn(text, appendUserMsg = true) {
                   state: data.toolState || 'ACTIVE',
                   duration: data.duration || 0,
                   stepIndex: data.stepIndex,
+                  toolId: data.toolId || '',
                   toolAction: data.toolAction || '',
                   toolSummary: data.toolSummary || '',
                   waited: data.waited || 0
@@ -3346,7 +3352,7 @@ async function runConversationTurn(text, appendUserMsg = true) {
               }
               if (data.error) { streamError = new Error(data.error); done2(() => reject(streamError)); return; }
               if (data.progress) {
-                if (data.toolName) toolEvents.push({ tool: data.toolName, stepType: data.stepType || '', tip: data.tip || '', waited: data.waited || 0, input: data.toolInput, output: data.toolOutput, state: data.toolState });
+                if (data.toolName) toolEvents.push({ tool: data.toolName, stepType: data.stepType || '', tip: data.tip || '', waited: data.waited || 0, input: data.toolInput, output: data.toolOutput, state: data.toolState, toolId: data.toolId || '', stepIndex: data.stepIndex });
                 const targetNode = clientRun.asstNode || asstNode;
                 if (state.activeId === conv.id && targetNode && targetNode.bubble) {
                   updateAssistantBubble(targetNode, acc, toolEvents, true);
@@ -5065,7 +5071,13 @@ function tryReconnectToOngoingRun() {
       const node = ensureAsstNode();
       if (data.tip) latestTip = data.tip;
       if (data.toolName) {
-        let existing = toolEvents.find(e => e.stepIndex != null && e.stepIndex === data.stepIndex);
+        let existing = null;
+        if (data.toolId) {
+          existing = toolEvents.find(e => e.toolId === data.toolId);
+        }
+        if (!existing && data.stepIndex != null) {
+          existing = toolEvents.find(e => e.stepIndex != null && e.stepIndex === data.stepIndex);
+        }
         if (!existing && toolEvents.length > 0) {
           const last = toolEvents[toolEvents.length - 1];
           if (last && last.tool === data.toolName && (last.state === 'ACTIVE' || !last.output) && data.toolOutput) {
@@ -5073,6 +5085,7 @@ function tryReconnectToOngoingRun() {
           }
         }
         if (existing) {
+          if (data.toolId) existing.toolId = data.toolId;
           if (data.toolInput) existing.input = data.toolInput;
           if (data.toolOutput) existing.output = data.toolOutput;
           if (data.toolState) existing.state = data.toolState;
@@ -5081,6 +5094,7 @@ function tryReconnectToOngoingRun() {
           toolEvents.push({
             tool: data.toolName,
             stepIndex: data.stepIndex,
+            toolId: data.toolId || '',
             stepType: data.stepType || '',
             tip: data.tip || '',
             waited: data.waited || 0,
