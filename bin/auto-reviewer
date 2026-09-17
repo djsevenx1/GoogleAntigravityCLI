@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Auto-Reviewer CLI
+超轻量、零依赖的本地全自动代码审查工具。
+支持即时增量审查 (Git Diff)、实时保存监视 (Watch) 以及提交前拦截 (Pre-commit Hook)。
+"""
+
+import os
+import sys
+import re
+import ast
+import time
+import subprocess
+from pathlib import Path
+
+# ANSI 终端彩色定义
+RED = "\033[91m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+MAGENTA = "\033[95m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+class ReviewIssue:
+    def __init__(self, file_path, line_no, severity, category, message, fix_suggestion=""):
+        self.file_path = file_path
+        self.line_no = line_no
+        self.severity = severity  # CRITICAL, WARNING, INFO
+        self.category = category  # 语法, 安全, 边界, 规范
+        self.message = message
+        self.fix_suggestion = fix_suggestion
+
+def check_python_ast(file_path, content):
+    """检测 Python 语法完整性"""
+    issues = []
+    try:
+        ast.parse(content, filename=file_path)
+    except SyntaxError as e:
+        issues.append(ReviewIssue(
+            file_path, e.lineno or 1, "CRITICAL", "语法错误",
+            f"Python 语法错误: {e.msg}",
+            "请检查语法符号、缩进或括号匹配"
+        ))
+    return issues
+
+def check_patterns(file_path, lines):
+    """基于多模式的安全性与缺陷扫描"""
+    issues = []
+    
+    # 规则列表: (正则模式, 级别, 类别, 缺陷描述, 修复建议, 语言限制扩展名集合)
+    rules = [
+        # 安全漏洞
+        (r'["\'](?:AKIA[0-9A-Z]{16}|ghp_[0-9a-zA-Z]{36}|sk-[a-zA-Z0-9]{20,})["\']', 
+         "CRITICAL", "安全风险", "代码中硬编码了云厂商/API密钥或Token", "请将其迁移到环境变量或安全配置中心"),
+        (r'(password|passwd|secret|api_key|token)\s*=\s*["\'][^"\']{6,}["\']', 
+         "CRITICAL", "安全风险", "可能硬编码了明文密码或密钥", "请通过环境变量或外部密文加载"),
+        (r'(?:execute|cursor\.execute)\s*\(\s*f["\']', 
+         "CRITICAL", "安全风险", "SQL 语句直接使用 f-string 拼接，存在 SQL 注入风险", "请改用参数化查询（如 cursor.execute(sql, (param,))）"),
+        (r'(?:subprocess\.(?:Popen|run|call)|os\.system)\s*\([^)]*shell\s*=\s*True', 
+         "CRITICAL", "安全风险", "启用了 shell=True 的子进程调用，易受命令注入攻击", "请改用列表传参（shell=False）或进行严格入参过滤"),
+        (r'eval\s*\([^)]+\)|exec\s*\([^)]+\)', 
+         "CRITICAL", "安全风险", "使用 eval/exec 动态执行字符串代码", "尽量避免使用动态执行，改用安全解析方法"),
+         
+        # 异常与边界
+        (r'except\s*:\s*pass|except\s+Exception\s*:\s*pass', 
+         "WARNING", "边界隐患", "空捕获异常并吞噬错误 (except: pass)", "请至少记录错误日志 (logger.error) 或处理具体异常类型"),
+        (r'catch\s*\([^)]*\)\s*\{\s*\}', 
+         "WARNING", "边界隐患", "空捕获异常，吞噬系统错误", "请输出错误日志或进行降级恢复处理"),
+        
+        # 资源与调试
+        (r'console\.log\s*\(', 
+         "INFO", "调试残留", "保留了 console.log 调试语句", "请在正式发布前清理冗余日志"),
+        (r'debugger\s*;', 
+         "WARNING", "调试残留", "代码中包含 debugger 断点指令", "请删除生产代码中的断点"),
+        (r'print\s*\([^)]*debug[^)]*\)', 
+         "INFO", "调试残留", "可能存在临时打印语句", "建议迁移至标准 logging 模块")
+    ]
+    
+    for idx, line in enumerate(lines, 1):
+        # 忽略注释
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith("//"):
+            continue
+            
+        for pattern, severity, category, msg, suggestion in rules:
+            if re.search(pattern, line, re.IGNORECASE):
+                issues.append(ReviewIssue(file_path, idx, severity, category, msg, suggestion))
+                
+    return issues
+
+def review_file(file_path):
+    """审查单个文件"""
+    path = Path(file_path)
+    if not path.is_file():
+        return []
+        
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+            lines = content.splitlines()
+    except Exception as e:
+        return [ReviewIssue(str(file_path), 0, "WARNING", "读取失败", f"无法读取文件: {e}")]
+
+    issues = []
+    if path.suffix == ".py":
+        issues.extend(check_python_ast(str(file_path), content))
+        
+    issues.extend(check_patterns(str(file_path), lines))
+    return issues
+
+def get_git_diff_files():
+    """获取当前工作区发生变动的文件列表"""
+    try:
+        res = subprocess.run(["git", "status", "--porcelain"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if res.returncode != 0:
+            return None
+        files = []
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(maxsplit=1)
+            if len(parts) == 2:
+                fpath = parts[1]
+                if not fpath.startswith("."):
+                    files.append(fpath)
+        return files
+    except Exception:
+        return None
+
+def print_report(issues, target_desc="当前代码改动"):
+    """美化打印审查报告"""
+    print(f"\n{BOLD}{CYAN}🔍 [Auto-Reviewer 自动代码审查] 目标: {target_desc}{RESET}")
+    print("=" * 70)
+    
+    if not issues:
+        print(f"{GREEN}✅ 审查通过！未发现高危语法错误、安全漏洞或严重逻辑缺陷。{RESET}")
+        print("=" * 70 + "\n")
+        return 0
+
+    critical_cnt = sum(1 for i in issues if i.severity == "CRITICAL")
+    warning_cnt = sum(1 for i in issues if i.severity == "WARNING")
+    info_cnt = sum(1 for i in issues if i.severity == "INFO")
+
+    for i in issues:
+        if i.severity == "CRITICAL":
+            badge = f"{RED}[高危缺陷]{RESET}"
+        elif i.severity == "WARNING":
+            badge = f"{YELLOW}[注意隐患]{RESET}"
+        else:
+            badge = f"{BLUE}[代码建议]{RESET}"
+            
+        print(f"{badge} {BOLD}{i.file_path}:{i.line_no}{RESET} 类别: {MAGENTA}{i.category}{RESET}")
+        print(f"   问题: {i.message}")
+        if i.fix_suggestion:
+            print(f"   建议: {GREEN}{i.fix_suggestion}{RESET}")
+        print("-" * 70)
+
+    print(f"{BOLD}审查统计:{RESET} 高危: {RED}{critical_cnt}{RESET} | 隐患: {YELLOW}{warning_cnt}{RESET} | 建议: {BLUE}{info_cnt}{RESET}")
+    print("=" * 70 + "\n")
+    return critical_cnt
+
+def run_diff_review():
+    """审查当前 Git Diff 改动"""
+    changed_files = get_git_diff_files()
+    if changed_files is None:
+        # 非 git 目录，审查当前目录下常见代码文件
+        files = [str(p) for p in Path(".").glob("**/*") if p.suffix in {".py", ".js", ".ts", ".sh"} and not any(part.startswith(".") for part in p.parts)]
+        target_desc = "当前目录有效源码文件"
+    elif not changed_files:
+        print(f"\n{GREEN}ℹ️ 当前工作区干净，无未提交的代码变更。{RESET}\n")
+        return 0
+    else:
+        files = [f for f in changed_files if Path(f).exists() and Path(f).suffix in {".py", ".js", ".ts", ".sh", ".json", ".html"}]
+        target_desc = f"Git 变更文件 ({len(files)} 个)"
+
+    all_issues = []
+    for f in files:
+        all_issues.extend(review_file(f))
+        
+    return print_report(all_issues, target_desc)
+
+def run_watch_mode():
+    """实时监视模式：边写代码边自动审查"""
+    print(f"\n{BOLD}{GREEN}👀 [Auto-Reviewer 实时监听模式已启动]{RESET}")
+    print(f"{CYAN}提示: 在编辑器中保存代码时，将立即自动执行审查。按 Ctrl+C 退出。{RESET}\n")
+    
+    file_mtimes = {}
+    while True:
+        try:
+            changed_files = []
+            for p in Path(".").glob("**/*"):
+                if p.is_file() and p.suffix in {".py", ".js", ".ts", ".sh"} and not any(part.startswith(".") for part in p.parts):
+                    mtime = p.stat().st_mtime
+                    if str(p) in file_mtimes and file_mtimes[str(p)] != mtime:
+                        changed_files.append(str(p))
+                    file_mtimes[str(p)] = mtime
+
+            if changed_files:
+                for f in changed_files:
+                    issues = review_file(f)
+                    print_report(issues, f"变更触发: {f}")
+                    
+            time.sleep(1.0)
+        except KeyboardInterrupt:
+            print(f"\n{YELLOW}实时监听已停止。{RESET}")
+            break
+
+def install_git_hook():
+    """一键安装 Git 提交前审查钩子"""
+    hook_path = Path(".git/hooks/pre-commit")
+    if not Path(".git").is_dir():
+        print(f"{RED}❌ 错误: 当前目录不是 Git 仓库根目录。{RESET}")
+        return 1
+        
+    hook_content = """#!/bin/sh
+# Auto-Reviewer pre-commit hook
+auto-reviewer
+if [ $? -gt 0 ]; then
+    echo "\\033[91m[Auto-Reviewer] 发现高危代码缺陷，已拦截提交。请修复后重新 commit。\\033[0m"
+    exit 1
+fi
+"""
+    hook_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(hook_path, "w", encoding="utf-8") as f:
+        f.write(hook_content)
+    hook_path.chmod(0o755)
+    print(f"{GREEN}✅ Git pre-commit 审查钩子安装成功！后续每次 git commit 时将自动审查并拦截高危缺陷。{RESET}")
+    return 0
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "diff"
+    if cmd in ["watch", "-w", "--watch"]:
+        run_watch_mode()
+    elif cmd in ["hook", "install-hook"]:
+        sys.exit(install_git_hook())
+    elif cmd in ["help", "-h", "--help"]:
+        print(f"""
+{BOLD}Auto-Reviewer - 本地全自动代码审查工具{RESET}
+
+用法:
+  auto-reviewer               审查当前工作区未提交的代码 (Git Diff)
+  auto-reviewer <文件路径>    审查指定的代码文件
+  auto-reviewer watch         启动实时监听（保存代码即自动审查，边写边审）
+  auto-reviewer hook          为当前 Git 仓库安装提交前自动审查钩子
+""")
+    else:
+        if os.path.exists(cmd):
+            issues = review_file(cmd)
+            sys.exit(1 if print_report(issues, f"指定文件 {cmd}") > 0 else 0)
+        else:
+            sys.exit(1 if run_diff_review() > 0 else 0)
+
+if __name__ == "__main__":
+    main()
