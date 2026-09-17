@@ -11,7 +11,7 @@
 
 *专为自建服务器、私有云及 NAS（群晖、TrueNAS、极空间等）环境打造的私有化 AI 编程助手与对话平台*
 
-[功能特性](#-功能特性) • [系统架构](#-系统架构) • [快速开始](#-快速开始) • [代理与网络保活](#-代理与全球网络保活) • [配置说明](#-配置说明) • [常见问题](#-常见问题与运维)
+[功能特性](#-功能特性) • [系统架构](#-系统架构) • [快速开始](#-快速开始) • [代理与网络保活](#-代理与全球网络保活) • [配置说明](#-配置说明) • [常见问题](#-常见问题与运维) • [鸣谢与致谢](#-鸣谢与致谢-acknowledgments)
 
 </div>
 
@@ -351,6 +351,19 @@ curl -x socks5h://127.0.0.1:19999 https://www.google.com -I
 
 ---
 
+## 🙏 鸣谢与致谢 (Acknowledgments)
+
+本项目在开发与架构演进过程中，深度参考并集成了开源社区的诸多优秀项目与创新实践，特此致谢：
+
+- **[CloudCLI / ClaudeCodeUI](https://github.com/siteboon/claudecodeui)**：
+  - 本项目的现代化 WebUI 控制台、多标签会话调度、node-pty 伪终端交互以及工作区文件管理机制，深度借鉴并融合了 [CloudCLI](https://cloudcli.ai) / [ClaudeCodeUI](https://github.com/siteboon/claudecodeui) 的前沿界面架构与工程代码。向原作者及开源社区贡献者们的卓越工作致以崇高敬意！
+- **[Google Antigravity CLI](https://antigravity.google)**：
+  - 感谢 Google 官方 DeepMind / Cloud Code 团队打造的下一代强大 Agentic 编程助手工具与推理基础设施。
+- **[URnetwork](https://bringyour.network)**：
+  - 感谢分布式网络与全球 SOCKS5 代理路由套件支持，为跨地域开发提供了高可用的网络保活能力。
+
+---
+
 ## 📄 开源许可证
 
-本项目基于 [MIT License](LICENSE) 开源发布。
+本项目基于 [MIT License](LICENSE) 开源发布。保留相关开源组件的原始著作权与许可声明。
