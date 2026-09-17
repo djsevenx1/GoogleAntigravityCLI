@@ -942,25 +942,8 @@ export async function spawnAntigravity(
     const tokens = Math.min(Math.max(rawTurnTokens, 200), 25000);
     const finalSessionId = capturedSessionId || sessionId || processKey;
 
-    let turnQuotaSnapshot: any = null;
-    try {
-      const activeAccount = await antigravityAccountsService.getActiveAccount();
-      const targetEmail = activeAccount?.email || antigravityAccountsService.getActiveEmail() || undefined;
-      // Instantly obtain quota snapshot from memory cache (0ms, non-blocking)
-      turnQuotaSnapshot = await antigravityAccountsService.getTurnQuotaSnapshot(
-        model,
-        tokens,
-        durationSec,
-        false,
-        targetEmail
-      );
-      // Asynchronously refresh live quota from upstream Google in background
-      void antigravityAccountsService.fetchLiveQuotaSummary(true, targetEmail).catch((e) => {
-        console.warn('[Antigravity Runtime] Background quota sync failed:', e);
-      });
-    } catch (e) {
-      console.warn('[Antigravity Runtime] Failed to fetch quota snapshot at turn completion:', e);
-    }
+    // 🚀【核心优化】零延迟完成输出：先立即发出完成消息，完全不阻塞前端交互！
+    const fastQuota = antigravityAccountsService.getLiveQuotaCached();
     const completeMessage = createCompleteMessage({
       provider: 'antigravity',
       sessionId: finalSessionId,
@@ -969,19 +952,46 @@ export async function spawnAntigravity(
     if (finalResult.usage) {
       (completeMessage as AnyRecord).usage = finalResult.usage;
     }
-    if (turnQuotaSnapshot) {
-      (completeMessage as AnyRecord).quotaSnapshot = turnQuotaSnapshot;
+    if (fastQuota) {
+      (completeMessage as AnyRecord).quotaSnapshot = fastQuota;
     }
     (completeMessage as AnyRecord).meta = {
       model,
       duration: durationSec,
       tokens,
-      quotaSnapshot: turnQuotaSnapshot,
+      quotaSnapshot: fastQuota || undefined,
     };
     ws.send(completeMessage);
 
     notifyTerminalState({ code: 0 });
     cleanupProcessTracking();
+
+    // 🚀【核心优化】对话完成后，在后台异步拉取最新 Google 额度，刷新完成后推送 quota_update
+    void (async () => {
+      try {
+        const activeAccount = await antigravityAccountsService.getActiveAccount();
+        const targetEmail = activeAccount?.email || antigravityAccountsService.getActiveEmail() || undefined;
+        const freshSnapshot = await antigravityAccountsService.fetchLiveQuotaSummary(true, targetEmail);
+        if (freshSnapshot) {
+          const snapshotWithModel = {
+            ...freshSnapshot,
+            model,
+            tokens,
+            duration: durationSec,
+            updatedAt: Date.now(),
+          };
+          ws.send(createNormalizedMessage({
+            kind: 'quota_update' as any,
+            provider: 'antigravity',
+            sessionId: finalSessionId,
+            quotaSnapshot: snapshotWithModel,
+          }));
+        }
+      } catch (e) {
+        console.warn('[Antigravity Runtime] Background quota sync failed:', e);
+      }
+    })();
+
     return { conversationId: capturedSessionId, exitCode: 0 };
   } catch (err: any) {
     const finalSessionId = capturedSessionId || sessionId || processKey;

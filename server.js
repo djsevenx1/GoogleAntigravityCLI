@@ -2866,93 +2866,109 @@ wss.on('connection', (ws, req) => {
       run.isRunning = false;
 
       const currentTurnAcc = getActiveAccount() || activeAcc;
-      let freshProfile = null;
-      if (currentTurnAcc) {
-        freshProfile = await refreshGoogleProfileInBackground(true, currentTurnAcc).catch(() => null);
-      }
-      const freshQuota = buildLiveWindowsData(freshProfile || cachedGoogleProfile, currentTurnAcc);
+      const initialQuota = buildLiveWindowsData(cachedGoogleProfile, currentTurnAcc);
 
-      // 2. 构造当轮助手的完整元数据与配额快照
-      const isClaudeModel = String(model || '').toLowerCase().includes('claude') || String(model || '').toLowerCase().includes('gpt') || String(model || '').toLowerCase().includes('oss');
-      const active5hPool = isClaudeModel ? freshQuota?.windows?.claude5h : freshQuota?.windows?.fiveHour;
-      const activeWeeklyPool = isClaudeModel ? freshQuota?.windows?.claudeWeekly : freshQuota?.windows?.weekly;
-
-      const turnQuotaSnapshot = {
-        gemini5h: freshQuota?.windows?.fiveHour || null,
-        geminiWeekly: freshQuota?.windows?.weekly || null,
-        claude5h: freshQuota?.windows?.claude5h || null,
-        claudeWeekly: freshQuota?.windows?.claudeWeekly || null,
-        percent: active5hPool?.percent != null ? active5hPool.percent : 100,
-        resetTime: active5hPool?.resetTime || null,
-        resetIn: active5hPool?.resetsIn || active5hPool?.resetText || '即将重置',
-        weeklyPercent: activeWeeklyPool?.percent != null ? activeWeeklyPool.percent : 100,
-        weeklyResetTime: activeWeeklyPool?.resetTime || null,
-        weeklyResetIn: activeWeeklyPool?.resetsIn || activeWeeklyPool?.resetText || '即将重置',
-        model: model,
-        accountEmail: currentTurnAcc?.email || ''
-      };
-
-      // 3. 自动持久化保存到当前会话文件
-      try {
-        const filePath = getSessionFilePath(convKey);
-        let sessionData = {
-          id: convKey,
-          title: '新对话',
-          messages: [],
-          convId: out ? out.conversationId : (run.conversationId || null),
-          createdAt: run.startTime,
-          updatedAt: Date.now()
-        };
-        if (fs.existsSync(filePath)) {
-          try { sessionData = JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch (_) {}
-        }
-        sessionData.messages = [...(run.initialMessages || [])];
-        const cleanAcc = (run.accumulated || '').replace(/[\u200b\s]/g, '').trim();
-        if (cleanAcc || run.toolEvents?.length) {
-          sessionData.messages.push({
-            role: 'assistant',
-            content: cleanAcc ? run.accumulated : '',
-            tools: run.toolEvents?.length ? run.toolEvents : undefined,
-            meta: {
-              duration: Math.round((Date.now() - t0) / 100) / 10,
-              model: model,
-              quotaSnapshot: turnQuotaSnapshot
-            }
-          });
-        }
-        if (out && out.conversationId) sessionData.convId = out.conversationId;
-        try {
-          const synced = syncSessionWithTranscript(sessionData);
-          if (synced && Array.isArray(synced.messages)) {
-            sessionData = synced;
-          }
-        } catch (_) {}
-        if (cleanAcc) {
-          const l = sessionData.messages[sessionData.messages.length - 1];
-          if (l && l.role === 'assistant' && (!l.content || l.content.replace(/[\u200b\s]/g, '') === '')) {
-            l.content = run.accumulated;
-          }
-        }
-        sessionData.updatedAt = Date.now();
-        const lastMsg = sessionData.messages[sessionData.messages.length - 1];
-        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.tools) {
-          run.toolEvents = lastMsg.tools;
-        }
-        const tmpPath = `${filePath}.tmp.${Date.now()}`;
-        fs.writeFileSync(tmpPath, JSON.stringify(sessionData, null, 2), 'utf-8');
-        fs.renameSync(tmpPath, filePath);
-      } catch (err) {
-        debugLog('[ws/chat] auto-save session error:', err && err.message);
-      }
-
-      // 4. 广播包含 100% 真实扣减配额与已补齐真实代码工具的 done 事件！
+      // 1. 🚀【核心优化】零延迟完成输出：先立即广播 done 事件！
+      // 前端收到后立刻解除“思考中”转圈和输入框禁用，用户无需等待任何网络配额请求！
       broadcast({
         done: true,
         conversationId: out ? out.conversationId : null,
         tools: run.toolEvents,
-        liveQuota: freshQuota,
-        quotaSnapshot: turnQuotaSnapshot
+        liveQuota: initialQuota
       });
+
+      // 2. 🚀【核心优化】在后台异步刷新 Google 官方实时额度并持久化会话
+      (async () => {
+        try {
+          let freshProfile = null;
+          if (currentTurnAcc) {
+            freshProfile = await refreshGoogleProfileInBackground(true, currentTurnAcc).catch(() => null);
+          }
+          const freshQuota = buildLiveWindowsData(freshProfile || cachedGoogleProfile, currentTurnAcc);
+
+          // 构造更新后的额度快照
+          const isClaudeModel = String(model || '').toLowerCase().includes('claude') || String(model || '').toLowerCase().includes('gpt') || String(model || '').toLowerCase().includes('oss');
+          const active5hPool = isClaudeModel ? freshQuota?.windows?.claude5h : freshQuota?.windows?.fiveHour;
+          const activeWeeklyPool = isClaudeModel ? freshQuota?.windows?.claudeWeekly : freshQuota?.windows?.weekly;
+
+          const turnQuotaSnapshot = {
+            gemini5h: freshQuota?.windows?.fiveHour || null,
+            geminiWeekly: freshQuota?.windows?.weekly || null,
+            claude5h: freshQuota?.windows?.claude5h || null,
+            claudeWeekly: freshQuota?.windows?.claudeWeekly || null,
+            percent: active5hPool?.percent != null ? active5hPool.percent : 100,
+            resetTime: active5hPool?.resetTime || null,
+            resetIn: active5hPool?.resetsIn || active5hPool?.resetText || '即将重置',
+            weeklyPercent: activeWeeklyPool?.percent != null ? activeWeeklyPool.percent : 100,
+            weeklyResetTime: activeWeeklyPool?.resetTime || null,
+            weeklyResetIn: activeWeeklyPool?.resetsIn || activeWeeklyPool?.resetText || '即将重置',
+            model: model,
+            accountEmail: currentTurnAcc?.email || ''
+          };
+
+          // 自动持久化保存到当前会话文件
+          try {
+            const filePath = getSessionFilePath(convKey);
+            let sessionData = {
+              id: convKey,
+              title: '新对话',
+              messages: [],
+              convId: out ? out.conversationId : (run.conversationId || null),
+              createdAt: run.startTime,
+              updatedAt: Date.now()
+            };
+            if (fs.existsSync(filePath)) {
+              try { sessionData = JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch (_) {}
+            }
+            sessionData.messages = [...(run.initialMessages || [])];
+            const cleanAcc = (run.accumulated || '').replace(/[\u200b\s]/g, '').trim();
+            if (cleanAcc || run.toolEvents?.length) {
+              sessionData.messages.push({
+                role: 'assistant',
+                content: cleanAcc ? run.accumulated : '',
+                tools: run.toolEvents?.length ? run.toolEvents : undefined,
+                meta: {
+                  duration: Math.round((Date.now() - t0) / 100) / 10,
+                  model: model,
+                  quotaSnapshot: turnQuotaSnapshot
+                }
+              });
+            }
+            if (out && out.conversationId) sessionData.convId = out.conversationId;
+            try {
+              const synced = syncSessionWithTranscript(sessionData);
+              if (synced && Array.isArray(synced.messages)) {
+                sessionData = synced;
+              }
+            } catch (_) {}
+            if (cleanAcc) {
+              const l = sessionData.messages[sessionData.messages.length - 1];
+              if (l && l.role === 'assistant' && (!l.content || l.content.replace(/[\u200b\s]/g, '') === '')) {
+                l.content = run.accumulated;
+              }
+            }
+            sessionData.updatedAt = Date.now();
+            const lastMsg = sessionData.messages[sessionData.messages.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant' && lastMsg.tools) {
+              run.toolEvents = lastMsg.tools;
+            }
+            const tmpPath = `${filePath}.tmp.${Date.now()}`;
+            fs.writeFileSync(tmpPath, JSON.stringify(sessionData, null, 2), 'utf-8');
+            fs.renameSync(tmpPath, filePath);
+          } catch (err) {
+            debugLog('[ws/chat] auto-save session error:', err && err.message);
+          }
+
+          // 3. 额度拉取完成后，通过专用消息静默推送更新前端 HUD 徽章，界面平滑过渡
+          broadcast({
+            liveQuotaUpdate: true,
+            liveQuota: freshQuota,
+            quotaSnapshot: turnQuotaSnapshot
+          });
+        } catch (err) {
+          debugLog('[ws/chat] background quota refresh error:', err && err.message);
+        }
+      })();
     } catch (e) {
       debugLog('[ws/chat] cliProvider ERROR:', e && e.message);
       run.error = e;
