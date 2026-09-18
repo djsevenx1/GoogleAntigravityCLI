@@ -63,11 +63,23 @@ function validateFilename(name) {
     }
 }
 function resolvePathInsideProject(projectRoot, targetPath) {
-    const resolvedPath = path.isAbsolute(targetPath)
-        ? path.resolve(targetPath)
-        : path.resolve(projectRoot, targetPath);
+    const allowAnyPath = process.env.ALLOW_ALL_WORKSPACES === 'true' ||
+        process.env.ALLOW_ANY_WORKSPACE_PATH === 'true' ||
+        process.env.ALLOW_ALL_WORKSPACES !== 'false';
+    if (path.isAbsolute(targetPath)) {
+        const resolvedPath = path.resolve(targetPath);
+        if (allowAnyPath) {
+            return resolvedPath;
+        }
+        const normalizedProjectRoot = path.resolve(projectRoot) + path.sep;
+        if (resolvedPath.startsWith(normalizedProjectRoot) || resolvedPath === path.resolve(projectRoot)) {
+            return resolvedPath;
+        }
+        throw createFileTreeError('Path must be under project root', 403, 'PATH_OUTSIDE_PROJECT');
+    }
+    const resolvedPath = path.resolve(projectRoot, targetPath);
     const normalizedProjectRoot = path.resolve(projectRoot) + path.sep;
-    if (!resolvedPath.startsWith(normalizedProjectRoot)) {
+    if (!allowAnyPath && !resolvedPath.startsWith(normalizedProjectRoot) && resolvedPath !== path.resolve(projectRoot)) {
         throw createFileTreeError('Path must be under project root', 403, 'PATH_OUTSIDE_PROJECT');
     }
     return resolvedPath;
