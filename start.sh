@@ -26,10 +26,10 @@ if [ -z "$AGY_BIN" ]; then
 fi
 echo "[CLI] $AGY_BIN  ($("$AGY_BIN" --version 2>/dev/null || echo '?'))"
 
-# 2) 安装依赖（如缺）
-if [ ! -d node_modules ]; then
-  echo "[npm] 安装依赖…"
-  npm install
+# 2) 检查现代版 WebUI 核心依赖
+if [ ! -d "$(pwd)/webui/node_modules" ] || [ ! -d "$(pwd)/webui/dist-server" ]; then
+  echo "[webui] 正在检查或初始化现代版 WebUI 依赖…"
+  (cd "$(pwd)/webui" && npm install)
 fi
 
 # 3) 代理开关：读根目录 proxy-toggle.txt，yes=起 SOCKS5 代理，no=直连不起
@@ -47,6 +47,6 @@ else
   unset ALL_PROXY HTTPS_PROXY HTTP_PROXY
 fi
 
-# 4) 启动主服务
-echo "[run] 正在启动…"
-AGY_BIN="$AGY_BIN" exec node server.js
+# 4) 启动现代化 WebUI 主服务 (端口 3100)
+echo "[run] 正在启动现代化 Antigravity WebUI (端口 3100)…"
+exec /bin/bash "$(cd "$(dirname "$0")" && pwd)/webui/run-3100-server.sh"

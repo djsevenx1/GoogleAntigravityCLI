@@ -61,3 +61,7 @@ finalize-*.cjs
 .DS_Store
 .vscode/
 .idea/
+
+bin/*.old
+bin/.*.old
+

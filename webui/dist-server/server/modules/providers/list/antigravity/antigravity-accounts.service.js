@@ -387,8 +387,73 @@ class AntigravityAccountsService {
             updatedAt: Date.now(),
         });
     }
-    deductLocalQuota(_model, _tokens) {
-        // Pure upstream mode: do not synthesize local deductions
+    deductLocalQuota(model, tokens, targetEmail) {
+        if (!tokens || tokens <= 0)
+            return null;
+        const email = (targetEmail || this.getActiveEmail() || '').toLowerCase();
+        const accounts = this.loadAccounts();
+        const targetAcc = accounts.find((a) => a.email.toLowerCase() === email) || accounts.find((a) => a.isActive) || accounts[0];
+        if (!targetAcc)
+            return null;
+        const currentModel = String(model || 'gemini-3.8-flash').toLowerCase();
+        const isClaude = currentModel.includes('claude') || currentModel.includes('gpt') || currentModel.includes('oss');
+        const prefix = isClaude ? 'claude' : 'gemini';
+        // 算力权重折算
+        let weight = 1;
+        if (currentModel.includes('opus'))
+            weight = 15;
+        else if (currentModel.includes('sonnet'))
+            weight = 3;
+        else if (currentModel.includes('pro') && !currentModel.includes('flash'))
+            weight = 5;
+        else if (currentModel.includes('flash'))
+            weight = 1;
+        // Google AI Pro 算力池：5小时约 80,000 tokens (8000 WTUS)，每周约 500,000 tokens (50000 WTUS)
+        const consumedWTUS = (tokens * weight) / 1000;
+        const HOURLY_5H_LIMIT = 8000;
+        const WEEKLY_LIMIT = 50000;
+        if (!targetAcc.localQuota) {
+            targetAcc.localQuota = {};
+        }
+        const lq = targetAcc.localQuota;
+        const now = Date.now();
+        // 1. 扣减 5 小时滚动配额
+        const key5h = `${prefix}5h`;
+        const cur5h = lq[key5h] || { remainingFraction: 1, resetTime: new Date(now + 5 * 3600 * 1000).toISOString() };
+        const expiry5h = cur5h.resetTime ? new Date(cur5h.resetTime).getTime() : 0;
+        if (!expiry5h || now >= expiry5h) {
+            cur5h.remainingFraction = 1;
+            cur5h.resetTime = new Date(now + 5 * 3600 * 1000).toISOString();
+        }
+        const deduct5h = consumedWTUS / HOURLY_5H_LIMIT;
+        cur5h.remainingFraction = Math.max(0, parseFloat((cur5h.remainingFraction - deduct5h).toFixed(4)));
+        lq[key5h] = cur5h;
+        // 2. 扣减每周旗舰配额
+        const keyWeekly = `${prefix}Weekly`;
+        const curWeekly = lq[keyWeekly] || { remainingFraction: 1, resetTime: new Date(now + 7 * 24 * 3600 * 1000).toISOString() };
+        const expiryWeekly = curWeekly.resetTime ? new Date(curWeekly.resetTime).getTime() : 0;
+        if (!expiryWeekly || now >= expiryWeekly) {
+            curWeekly.remainingFraction = 1;
+            curWeekly.resetTime = new Date(now + 7 * 24 * 3600 * 1000).toISOString();
+        }
+        const deductWeekly = consumedWTUS / WEEKLY_LIMIT;
+        curWeekly.remainingFraction = Math.max(0, parseFloat((curWeekly.remainingFraction - deductWeekly).toFixed(4)));
+        lq[keyWeekly] = curWeekly;
+        lq.lastDeduct = now;
+        targetAcc.localQuota = lq;
+        // 重新构建快照并保存
+        const summary = targetAcc.quotaSummary || {};
+        const snapshot = this.buildQuotaSnapshot(summary, targetAcc.email);
+        targetAcc.quotaSnapshot = snapshot;
+        this.saveAccounts(accounts);
+        if (targetAcc.email) {
+            this.accountQuotaSnapshots.set(targetAcc.email.toLowerCase(), { snapshot, time: now });
+        }
+        if (targetAcc.isActive) {
+            this.cachedQuotaSnapshot = snapshot;
+            this.quotaCacheTime = now;
+        }
+        return snapshot;
     }
     buildQuotaSnapshot(summary, accountEmail) {
         const groups = summary?.groups || [];
@@ -398,13 +463,14 @@ class AntigravityAccountsService {
         const geminiWeeklyB = geminiGroup?.buckets?.find((b) => b.window === 'weekly' || b.bucketId?.includes('weekly')) || geminiGroup?.buckets?.[0];
         const claude5hB = claudeGroup?.buckets?.find((b) => b.window === '5h' || b.bucketId?.includes('5h')) || claudeGroup?.buckets?.[1];
         const claudeWeeklyB = claudeGroup?.buckets?.find((b) => b.window === 'weekly' || b.bucketId?.includes('weekly')) || claudeGroup?.buckets?.[0];
-        const gemini5h = this.parseBucket(gemini5hB, 'Gemini 5h 滚动算力', true);
-        const geminiWeekly = this.parseBucket(geminiWeeklyB, 'Gemini 每周旗舰算力', false);
-        const claude5h = this.parseBucket(claude5hB, 'Claude 5h 滚动算力', true);
-        const claudeWeekly = this.parseBucket(claudeWeeklyB, 'Claude 每周旗舰算力', false);
         const email = accountEmail || this.getActiveEmail() || '';
         const accounts = this.loadAccounts();
-        const targetAcc = accounts.find((a) => a.email.toLowerCase() === email.toLowerCase());
+        const targetAcc = accounts.find((a) => a.email.toLowerCase() === email.toLowerCase()) || accounts.find((a) => a.isActive);
+        const lq = targetAcc?.localQuota;
+        const gemini5h = this.parseBucket(gemini5hB, 'Gemini 5h 滚动算力', true, lq?.gemini5h);
+        const geminiWeekly = this.parseBucket(geminiWeeklyB, 'Gemini 每周旗舰算力', false, lq?.geminiWeekly);
+        const claude5h = this.parseBucket(claude5hB, 'Claude 5h 滚动算力', true, lq?.claude5h);
+        const claudeWeekly = this.parseBucket(claudeWeeklyB, 'Claude 每周旗舰算力', false, lq?.claudeWeekly);
         // Compute metrics from sessions
         let totalConversations = 0;
         let totalTurns = 0;
@@ -472,9 +538,19 @@ class AntigravityAccountsService {
             updatedAt: Date.now(),
         };
     }
-    parseBucket(b, fallbackTitle, is5h = false) {
-        const fraction = b?.remainingFraction != null ? Number(b.remainingFraction) : 1;
-        const resetTime = b?.resetTime || null;
+    parseBucket(b, fallbackTitle, is5h = false, localEntry) {
+        let fraction = b?.remainingFraction != null ? Number(b.remainingFraction) : 1;
+        let resetTime = b?.resetTime || null;
+        if (localEntry && localEntry.remainingFraction != null) {
+            const now = Date.now();
+            const localExpiry = localEntry.resetTime ? new Date(localEntry.resetTime).getTime() : 0;
+            if (!localExpiry || now < localExpiry) {
+                fraction = Math.min(fraction, Math.max(0, Number(localEntry.remainingFraction)));
+                if (!resetTime && localEntry.resetTime) {
+                    resetTime = localEntry.resetTime;
+                }
+            }
+        }
         const pct = parseFloat((fraction * 100).toFixed(1));
         const resetsIn = formatDynamicCountdown(resetTime, b?.description, is5h, pct);
         return {

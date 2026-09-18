@@ -867,8 +867,8 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
             Math.max(1, Math.round(cleanAcc.length / 3.2));
         const tokens = Math.min(Math.max(rawTurnTokens, 200), 25000);
         const finalSessionId = capturedSessionId || sessionId || processKey;
-        // 🚀【核心优化】零延迟完成输出：先立即发出完成消息，完全不阻塞前端交互！
-        const fastQuota = antigravityAccountsService.getLiveQuotaCached();
+        // 🚀【核心优化】对话完成：立即按本次消耗 tokens 与模型权重执行高精度配额扣减
+        const fastQuota = antigravityAccountsService.deductLocalQuota(model, tokens) || antigravityAccountsService.getLiveQuotaCached();
         const completeMessage = createCompleteMessage({
             provider: 'antigravity',
             sessionId: finalSessionId,
