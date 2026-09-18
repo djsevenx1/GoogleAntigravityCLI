@@ -13,6 +13,55 @@ const spawnFunction = crossSpawn;
 const activeAntigravityProcesses = new Map();
 const activeAbortControllers = new Map();
 let lastProxyRestartTime = 0;
+/**
+ * Kills Antigravity CLI processes left over from a previous server lifecycle.
+ *
+ * Each run is spawned with `--print-timeout`, so a CLI whose turn ended does
+ * NOT exit on its own — it waits for the next stdin prompt. The runtime
+ * SIGKILLs it ~4s after a turn resolves, but that safety timer lives in the
+ * server's event loop. If the server crashes or is restarted mid-run (EADDRINUSE,
+ * supervisor respawn, a deploy), the timer is lost and the child is reparented
+ * to init, lingering for the full print-timeout. On every fresh boot this scans
+ * /proc and reaps orphans spawned with THIS binary, so they can never pile up.
+ * Safe because at boot the new server has not spawned anything yet — every
+ * matching process is, by definition, an orphan.
+ */
+function reapOrphanedAntigravityProcesses() {
+    const binPath = resolveAntigravityBinary();
+    if (!binPath)
+        return;
+    const realBinPath = fs.existsSync(binPath) ? fs.realpathSync(binPath) : binPath;
+    let reapedCount = 0;
+    try {
+        for (const entry of fs.readdirSync('/proc')) {
+            if (!/^\d+$/.test(entry))
+                continue;
+            const pid = Number(entry);
+            if (pid === process.pid)
+                continue;
+            let cmdline = '';
+            try {
+                cmdline = fs.readFileSync(`/proc/${entry}/cmdline`, 'utf8');
+            }
+            catch {
+                continue;
+            }
+            // cmdline is NUL-separated; rebuild contains() works across the whole string.
+            if ((cmdline.includes(binPath) || cmdline.includes(realBinPath)) && cmdline.includes('--input-format')) {
+                try {
+                    process.kill(pid, 'SIGKILL');
+                    reapedCount++;
+                }
+                catch { /* already gone */ }
+            }
+        }
+        if (reapedCount > 0) {
+            console.log(`[Antigravity Runtime] 🧹 启动清理: 成功回收 ${reapedCount} 个上代遗留孤儿 CLI 进程`);
+        }
+    }
+    catch { /* /proc not available (non-Linux) — no-op */ }
+}
+reapOrphanedAntigravityProcesses();
 function resolveAntigravityPermissionArgs(permissionMode, skipPermissions) {
     if (skipPermissions || permissionMode === 'bypassPermissions' || permissionMode === 'auto') {
         return ['--dangerously-skip-permissions'];
@@ -191,7 +240,11 @@ function runAntigravityTurnOnce(params) {
         const baseArgs = [
             '--input-format', 'stream-json',
             '--output-format', 'stream-json',
-            '--print-timeout', process.env.AGY_PRINT_TIMEOUT || '24h',
+            // Idle-wait for the next stdin prompt after a turn. The runtime SIGKILLs
+            // the process on turn completion, but if the server dies mid-run the
+            // CLI is orphaned and lingers for this long — 24h was far too long and
+            // let crash-orphaned processes pile up. 10m is a safe idle ceiling.
+            '--print-timeout', process.env.AGY_PRINT_TIMEOUT || '10m',
         ];
         const { resolvedModel, resolvedEffort } = resolveAntigravityModelAndEffort(model, effort);
         if (resolvedModel) {
@@ -811,7 +864,6 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
             Math.max(1, Math.round(cleanAcc.length / 3.2));
         const tokens = Math.min(Math.max(rawTurnTokens, 200), 25000);
         const finalSessionId = capturedSessionId || sessionId || processKey;
-
         // 🚀【核心优化】零延迟完成输出：先立即发出完成消息，完全不阻塞前端交互！
         const fastQuota = antigravityAccountsService.getLiveQuotaCached();
         const completeMessage = createCompleteMessage({
@@ -834,7 +886,6 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
         ws.send(completeMessage);
         notifyTerminalState({ code: 0 });
         cleanupProcessTracking();
-
         // 🚀【核心优化】对话完成后，在后台异步拉取最新 Google 额度，刷新完成后推送 quota_update
         void (async () => {
             try {
@@ -861,7 +912,6 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
                 console.warn('[Antigravity Runtime] Background quota sync failed:', e);
             }
         })();
-
         return { conversationId: capturedSessionId, exitCode: 0 };
     }
     catch (err) {

@@ -27,6 +27,46 @@ const activeAbortControllers = new Map<string, AbortController>();
 
 let lastProxyRestartTime = 0;
 
+/**
+ * Kills Antigravity CLI processes left over from a previous server lifecycle.
+ *
+ * Each run is spawned with `--print-timeout`, so a CLI whose turn ended does
+ * NOT exit on its own — it waits for the next stdin prompt. The runtime
+ * SIGKILLs it ~4s after a turn resolves, but that safety timer lives in the
+ * server's event loop. If the server crashes or is restarted mid-run (EADDRINUSE,
+ * supervisor respawn, a deploy), the timer is lost and the child is reparented
+ * to init, lingering for the full print-timeout. On every fresh boot this scans
+ * /proc and reaps orphans spawned with THIS binary, so they can never pile up.
+ * Safe because at boot the new server has not spawned anything yet — every
+ * matching process is, by definition, an orphan.
+ */
+function reapOrphanedAntigravityProcesses(): void {
+  const binPath = resolveAntigravityBinary();
+  if (!binPath) return;
+  const realBinPath = fs.existsSync(binPath) ? fs.realpathSync(binPath) : binPath;
+  let reapedCount = 0;
+  try {
+    for (const entry of fs.readdirSync('/proc')) {
+      if (!/^\d+$/.test(entry)) continue;
+      const pid = Number(entry);
+      if (pid === process.pid) continue;
+      let cmdline = '';
+      try { cmdline = fs.readFileSync(`/proc/${entry}/cmdline`, 'utf8'); } catch { continue; }
+      // cmdline is NUL-separated; rebuild contains() works across the whole string.
+      if ((cmdline.includes(binPath) || cmdline.includes(realBinPath)) && cmdline.includes('--input-format')) {
+        try {
+          process.kill(pid, 'SIGKILL');
+          reapedCount++;
+        } catch { /* already gone */ }
+      }
+    }
+    if (reapedCount > 0) {
+      console.log(`[Antigravity Runtime] 🧹 启动清理: 成功回收 ${reapedCount} 个上代遗留孤儿 CLI 进程`);
+    }
+  } catch { /* /proc not available (non-Linux) — no-op */ }
+}
+reapOrphanedAntigravityProcesses();
+
 function resolveAntigravityPermissionArgs(permissionMode?: string, skipPermissions?: boolean): string[] {
   if (skipPermissions || permissionMode === 'bypassPermissions' || permissionMode === 'auto') {
     return ['--dangerously-skip-permissions'];
@@ -265,7 +305,11 @@ function runAntigravityTurnOnce(params: TurnAttemptParams): Promise<TurnAttemptR
     const baseArgs = [
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
-      '--print-timeout', process.env.AGY_PRINT_TIMEOUT || '24h',
+      // Idle-wait for the next stdin prompt after a turn. The runtime SIGKILLs
+      // the process on turn completion, but if the server dies mid-run the
+      // CLI is orphaned and lingers for this long — 24h was far too long and
+      // let crash-orphaned processes pile up. 10m is a safe idle ceiling.
+      '--print-timeout', process.env.AGY_PRINT_TIMEOUT || '10m',
     ];
 
     const { resolvedModel, resolvedEffort } = resolveAntigravityModelAndEffort(model, effort);
