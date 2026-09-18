@@ -57,8 +57,8 @@ const saveCommandHistory = (projectName: string, history: Record<string, number>
 const isPromiseLike = (value: unknown): value is Promise<unknown> =>
   Boolean(value) && typeof (value as Promise<unknown>).then === 'function';
 
-const isSkillCommand = (command: SlashCommand) =>
-  command.type === 'skill' || command.metadata?.type === 'skill';
+const isInsertableCommand = (command: SlashCommand) =>
+  command.type === 'skill' || command.metadata?.type === 'skill' || Boolean(command.metadata?.insertable);
 
 const dedupeProviderSkills = (skills: ProviderSkill[]): ProviderSkill[] => {
   const seenCommands = new Set<string>();
@@ -308,7 +308,7 @@ export function useSlashCommands({
 
   const selectCommandFromKeyboard = useCallback(
     (command: SlashCommand) => {
-      if (isSkillCommand(command)) {
+      if (isInsertableCommand(command)) {
         insertCommandIntoInput(command);
         return;
       }
@@ -330,7 +330,7 @@ export function useSlashCommands({
       }
 
       trackCommandUsage(command);
-      if (isSkillCommand(command)) {
+      if (isInsertableCommand(command)) {
         insertCommandIntoInput(command);
         return;
       }

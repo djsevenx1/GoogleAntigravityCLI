@@ -125,42 +125,78 @@ export function createCommandsRouter(dependencies) {
         return commands;
     }
     /**
-     * Built-in commands that are always available
+     * Built-in commands that are always available for Google Antigravity
      */
     const builtInCommands = [
         {
             name: "/help",
-            description: "Show help documentation for Claude Code",
+            description: "查看 Google Antigravity 帮助文档与命令大全",
             namespace: "builtin",
             metadata: { type: "builtin" },
         },
         {
+            name: "/boost",
+            description: "反重力多智能体深度推理模式（攻坚复杂架构与疑难 Bug）",
+            namespace: "builtin",
+            metadata: { type: "builtin", insertable: true },
+        },
+        {
+            name: "/plan",
+            description: "任务规划模式（先制定详细步骤确认后再执行）",
+            namespace: "builtin",
+            metadata: { type: "builtin", insertable: true },
+        },
+        {
+            name: "/review",
+            description: "自动化代码审查与自愈自检（扫描缺陷、漏洞与代码质量）",
+            namespace: "builtin",
+            metadata: { type: "builtin", insertable: true },
+        },
+        {
+            name: "/goal",
+            description: "长任务自主推进模式（不达目的不罢休，支持通宵长线执行）",
+            namespace: "builtin",
+            metadata: { type: "builtin", insertable: true },
+        },
+        {
             name: "/models",
-            description: "View available models for the current provider",
+            description: "查看与切换当前可用的 AI 模型列表",
             namespace: "builtin",
             metadata: { type: "builtin" },
         },
         {
             name: "/cost",
-            description: "Display token usage information",
+            description: "查看当前会话 Token 用量与额度详情",
             namespace: "builtin",
             metadata: { type: "builtin" },
         },
         {
             name: "/memory",
-            description: "Open CLAUDE.md memory file for editing",
+            description: "打开并编辑项目记忆规则 (AGENTS.md / GEMINI.md)",
             namespace: "builtin",
             metadata: { type: "builtin" },
         },
         {
+            name: "/browser",
+            description: "启用浏览器自动化工具与网页交互调研",
+            namespace: "builtin",
+            metadata: { type: "builtin", insertable: true },
+        },
+        {
+            name: "/grill-me",
+            description: "方案对齐深度访谈，澄清设计决策与架构权衡",
+            namespace: "builtin",
+            metadata: { type: "builtin", insertable: true },
+        },
+        {
             name: "/config",
-            description: "Open settings and configuration",
+            description: "打开系统运行时配置与偏好设置",
             namespace: "builtin",
             metadata: { type: "builtin" },
         },
         {
             name: "/status",
-            description: "Show system status and version information",
+            description: "查看系统运行状态、版本信息与环境拓扑",
             namespace: "builtin",
             metadata: { type: "builtin" },
         },
@@ -171,33 +207,26 @@ export function createCommandsRouter(dependencies) {
      */
     const builtInHandlers = {
         "/help": async (args, context) => {
-            const helpText = `# Claude Code Commands
+            const helpText = `# Google Antigravity 命令指南
 
-## Built-in Commands
+## 内置斜杠命令 (Built-in Commands)
 
 ${builtInCommands
-                .map((cmd) => `### ${cmd.name}
+                .map((cmd) => `### \`${cmd.name}\`
 ${cmd.description}
 `)
                 .join("\n")}
 
-## Custom Commands
+## 自定义扩展命令 (Custom Commands)
 
-Custom commands can be created in:
-- Project: \`.claude/commands/\` (project-specific)
-- User: \`~/.claude/commands/\` (available in all projects)
+自定义命令支持在以下目录创建 \`.md\` 模板：
+- 项目级: \`.agents/commands/\` 或 \`.gemini/commands/\` (仅限当前项目)
+- 全局级: \`~/.gemini/commands/\` 或 \`~/.claude/commands/\` (所有项目通用)
 
-### Command Syntax
-
-- **Arguments**: Use \`$ARGUMENTS\` for all args or \`$1\`, \`$2\`, etc. for positional
-- **File Includes**: Use \`@filename\` to include file contents
-- **Bash Commands**: Use \`!command\` to execute bash commands
-
-### Examples
-
-\`\`\`markdown
-/mycommand arg1 arg2
-\`\`\`
+### 常用用法提示
+- \`/boost <需求>\`: 启动多智能体深度推演与交叉验证，攻坚复杂架构与隐蔽 Bug。
+- \`/plan <任务>\`: 针对复杂任务生成结构化规划与审查自检清单。
+- \`/review\`: 对当前工作区所有改动进行安全漏洞与代码规范自动审查。
 `;
             return {
                 type: "builtin",
@@ -213,6 +242,38 @@ Custom commands can be created in:
                 },
             };
         },
+        "/boost": async (args) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: "🚀 **反重力 Boost 模式**: 请在输入框输入 `/boost <你的复杂任务或架构难题>`，系统将自动分配多智能体并行调研与独立交叉验证。",
+                format: "markdown",
+            },
+        }),
+        "/plan": async (args) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: "📋 **任务规划模式**: 请在输入框输入 `/plan <待规划任务>`，系统将在实施前先输出完整的步骤分解与确认方案。",
+                format: "markdown",
+            },
+        }),
+        "/review": async (args) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: "🔍 **自动化审查模式**: 请在输入框输入 `/review` 或 `/review <文件路径>`，系统将对变更代码进行安全漏洞、边界隐患与 Clean Code 审查自检。",
+                format: "markdown",
+            },
+        }),
+        "/goal": async (args) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: "🎯 **目标推进模式**: 请在输入框输入 `/goal <长线目标>`，系统将不间断自主推进，直至目标达成。",
+                format: "markdown",
+            },
+        }),
         "/models": (args, context) => executeModelsCommand(args, context, providerModelsService),
         "/cost": async (args, context) => {
             const tokenUsage = context?.tokenUsage || {};
@@ -276,11 +337,11 @@ Custom commands can be created in:
             // Read version from package.json
             const packageJsonPath = path.join(APP_ROOT, "package.json");
             let version = "unknown";
-            let packageName = "claude-code-ui";
+            let packageName = "GoogleAntigravityCLI";
             try {
                 const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8"));
                 version = packageJson.version;
-                packageName = packageJson.name;
+                packageName = packageJson.name || "GoogleAntigravityCLI";
             }
             catch (err) {
                 console.error("Error reading package.json:", err);
@@ -323,29 +384,33 @@ Custom commands can be created in:
                     action: "memory",
                     data: {
                         error: "No project selected",
-                        message: "Please select a project to access its CLAUDE.md file",
+                        message: "Please select a project to access its memory file",
                     },
                 };
             }
-            const claudeMdPath = path.join(projectPath, "CLAUDE.md");
-            // Check if CLAUDE.md exists
+            // 优先检测 AGENTS.md，其次 GEMINI.md，最后兼容 CLAUDE.md
+            const candidateFiles = ["AGENTS.md", "GEMINI.md", "CLAUDE.md"];
+            let memoryPath = path.join(projectPath, "AGENTS.md");
             let exists = false;
-            try {
-                await fs.access(claudeMdPath);
-                exists = true;
-            }
-            catch (err) {
-                // File doesn't exist
+            for (const fileName of candidateFiles) {
+                const p = path.join(projectPath, fileName);
+                try {
+                    await fs.access(p);
+                    memoryPath = p;
+                    exists = true;
+                    break;
+                }
+                catch (_) { }
             }
             return {
                 type: "builtin",
                 action: "memory",
                 data: {
-                    path: claudeMdPath,
+                    path: memoryPath,
                     exists,
                     message: exists
-                        ? `Opening CLAUDE.md at ${claudeMdPath}`
-                        : `CLAUDE.md not found at ${claudeMdPath}. Create it to store project-specific instructions.`,
+                        ? `打开项目规则记忆文件: ${path.basename(memoryPath)}`
+                        : `未找到记忆文件。建议在 ${projectPath} 创建 AGENTS.md 存放项目级专属约束。`,
                 },
             };
         },
@@ -367,17 +432,28 @@ Custom commands can be created in:
         try {
             const { projectPath } = req.body;
             const allCommands = [...builtInCommands];
-            // Scan project-level commands (.claude/commands/)
+            // Scan project-level commands (.agents/commands/, .gemini/commands/, .claude/commands/)
             if (projectPath) {
-                const projectCommandsDir = path.join(projectPath, ".claude", "commands");
-                const projectCommands = await scanCommandsDirectory(projectCommandsDir, projectCommandsDir, "project");
-                allCommands.push(...projectCommands);
+                const projectDirs = [
+                    path.join(projectPath, ".agents", "commands"),
+                    path.join(projectPath, ".gemini", "commands"),
+                    path.join(projectPath, ".claude", "commands"),
+                ];
+                for (const pDir of projectDirs) {
+                    const cmds = await scanCommandsDirectory(pDir, pDir, "project");
+                    allCommands.push(...cmds);
+                }
             }
-            // Scan user-level commands (~/.claude/commands/)
+            // Scan user-level commands (~/.gemini/commands/, ~/.claude/commands/)
             const homeDir = os.homedir();
-            const userCommandsDir = path.join(homeDir, ".claude", "commands");
-            const userCommands = await scanCommandsDirectory(userCommandsDir, userCommandsDir, "user");
-            allCommands.push(...userCommands);
+            const userDirs = [
+                path.join(homeDir, ".gemini", "commands"),
+                path.join(homeDir, ".claude", "commands"),
+            ];
+            for (const uDir of userDirs) {
+                const cmds = await scanCommandsDirectory(uDir, uDir, "user");
+                allCommands.push(...cmds);
+            }
             // Separate built-in and custom commands
             const customCommands = allCommands.filter((cmd) => cmd.namespace !== "builtin");
             // Sort commands alphabetically by name
