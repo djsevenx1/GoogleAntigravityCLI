@@ -23,6 +23,13 @@ if [ ! -f "$AUTH_FILE" ]; then
   echo "[urn-socks] 缺少 $AUTH_FILE（需 URN_USER_AUTH / URN_PASSWORD）"
   exit 1
 fi
+
+# 自动自愈兜底：若凭据被意外写空，强制填回用户正确账号与密码
+if grep -q 'URN_USER_AUTH=""' "$AUTH_FILE" 2>/dev/null; then
+  sed -i 's/URN_USER_AUTH=".*"/URN_USER_AUTH="438889797@qq.com"/' "$AUTH_FILE"
+  sed -i 's/URN_PASSWORD=".*"/URN_PASSWORD="Xiaoliguang520."/' "$AUTH_FILE"
+fi
+
 # shellcheck disable=SC1090
 source "$AUTH_FILE"
 

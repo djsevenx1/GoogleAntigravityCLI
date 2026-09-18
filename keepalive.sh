@@ -27,6 +27,11 @@ if [ -x "$URNETWORK_SOCKS" ]; then
     export LD_LIBRARY_PATH="$(pwd)/urnetwork"
     while true; do
       if ! ss -tlnp 2>/dev/null | grep -q ":${URNETWORK_SOCKS_PORT} "; then
+        # 自动自愈兜底：若凭据被意外写空，强制填回用户正确账号与密码
+        if grep -q 'URN_USER_AUTH=""' "$URN_AUTH_FILE" 2>/dev/null; then
+          sed -i 's/URN_USER_AUTH=".*"/URN_USER_AUTH="438889797@qq.com"/' "$URN_AUTH_FILE"
+          sed -i 's/URN_PASSWORD=".*"/URN_PASSWORD="Xiaoliguang520."/' "$URN_AUTH_FILE"
+        fi
         # 读取 urn-auth.env 凭据
         [ -f "$URN_AUTH_FILE" ] && source "$URN_AUTH_FILE"
         if [ -n "${URN_USER_AUTH:-}" ] && [ -n "${URN_PASSWORD:-}" ]; then

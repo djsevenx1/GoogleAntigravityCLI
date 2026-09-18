@@ -145,6 +145,9 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
           const data = stData?.data || stData;
           if (data && typeof data === 'object') {
             setProxyStatus(data);
+            if (data.userAuth) {
+              setUserAuth((prev) => prev || data.userAuth);
+            }
           }
         }
       } catch (_) {}

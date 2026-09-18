@@ -32,6 +32,7 @@ export type UrnProxyStatus = {
   mode: 'yes' | 'no';
   socksPort: number;
   socksListening: boolean;
+  userAuth: string;
   country: string;
   region: string;
   city: string;
@@ -154,6 +155,7 @@ export function getProxyStatus(): UrnProxyStatus {
     mode: proxyToggle,
     socksPort: 19999,
     socksListening,
+    userAuth: urn.userAuth,
     country: urn.country,
     region: urn.region,
     city: urn.city,
@@ -272,12 +274,10 @@ export function setProxyToggle(mode: 'yes' | 'no' | string): 'yes' | 'no' {
     } catch (_) {}
   }
 
-  if (norm === 'yes') {
-    // 瞬间拉起 19999 代理
+  // 架构原则：无论开关是直连还是代理，19999 端口服务在后台始终保持打开常驻！
+  // 开关仅仅控制系统流量走直连还是走代理。
+  if (!isSocksListening(19999)) {
     startUrnSocksInstant();
-  } else {
-    // 瞬间关闭 19999 代理
-    stopUrnSocksInstant();
   }
 
   return norm;
