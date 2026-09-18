@@ -6,61 +6,54 @@
 export function formatThinkingContent(raw: unknown): string {
   if (raw == null) return '';
   const text = typeof raw === 'string' ? raw : String(raw);
+  return text.trim();
+}
+
+/**
+ * 前端错误信息人性化转译工具
+ * 将 Google 官方地区限制、速率配额、网络闪断等底层堆栈转化为通俗易懂的中文操作引导
+ */
+export function humanizeErrorMessage(raw: unknown): string {
+  if (raw == null) return '';
+  const text = typeof raw === 'string' ? raw : String(raw);
   const trimmed = text.trim();
   if (!trimmed) return '';
 
-  // 1. 常见底层英文操作短语匹配替换
-  const prefixPatterns: [RegExp, string][] = [
-    [/^I need to check (the )?(git )?status/i, '正在检查代码仓库与工作区状态...'],
-    [/^I will run (the )?command/i, '正在执行系统诊断与自检命令...'],
-    [/^Let me run (the )?command/i, '正在执行自检与状态验证命令...'],
-    [/^I will search for/i, '正在检索工程代码与关键配置...'],
-    [/^Let me search for/i, '正在检索目标代码与关键定义...'],
-    [/^I should view (the )?file/i, '正在查看目标文件内容...'],
-    [/^I need to view/i, '正在查看指定源码与配置...'],
-    [/^Let me check/i, '正在核验系统运行参数与配置...'],
-    [/^I will edit (the )?file/i, '正在修改代码文件内容...'],
-    [/^I will use replace_file_content/i, '正在应用代码修改并执行替换...'],
-    [/^I will use run_command/i, '正在调用系统工具执行自动化任务...'],
-    [/^Analyzing directory/i, '正在分析工程目录结构...'],
-    [/^Running tests?/i, '正在运行自动化测试验证...'],
-    [/^Checking git status/i, '正在核查 Git 分支与改动...'],
-    [/^Searching (the )?code/i, '正在全局检索代码引用...'],
-    [/^Reviewing the changes/i, '正在审查代码改动与安全性...'],
-    [/^Checking (the )?(proxy|port|network)/i, '正在检测网络代理与端口通信状态...'],
-  ];
+  // 1. Google 地区限制报错 (User location is not supported)
+  if (
+    /location is not supported/i.test(trimmed) ||
+    /FAILED_PRECONDITION/i.test(trimmed) ||
+    /region is not supported/i.test(trimmed) ||
+    /country is not supported/i.test(trimmed)
+  ) {
+    return `⚠️【Google 地区限制拦截 (User Location Not Supported)】
+检测到当前网络直连或出口 IP 处于 Google 服务未覆盖区域。
 
-  for (const [pattern, replacement] of prefixPatterns) {
-    if (pattern.test(trimmed)) {
-      return replacement;
-    }
+💡 简易排查与解决办法：
+1. 点击右上角【设置】->【网络代理】；
+2. 确认已开启【SOCKS5 代理】（后台 19999 端口常驻守护）；
+3. 出口节点推荐选择【美国 (United States)】或可用海外节点；
+4. 切换后直接在输入框发送“继续”，即可无缝恢复对话。`;
   }
 
-  // 2. 统计中文字符比例，如果基本没有中文（主要是英文），自动映射为规范中文说明
-  const chineseCharCount = (trimmed.match(/[\u4e00-\u9fa5]/g) || []).length;
-  const totalCharCount = trimmed.replace(/\s+/g, '').length;
-  const isPrimarilyEnglish = totalCharCount > 0 && (chineseCharCount / totalCharCount < 0.25);
+  // 2. 速率与额度用尽 (RESOURCE_EXHAUSTED / 429)
+  if (/RESOURCE_EXHAUSTED/i.test(trimmed) || /Individual quota reached/i.test(trimmed) || /429/i.test(trimmed)) {
+    return '⚠️【请求速率上限提醒 (429)】当前模型短期请求过于频繁，触发了 Google 云端速率限制，请稍候 1~2 分钟或切换到 Gemini 2.5 Flash 快速模型继续。';
+  }
 
-  if (isPrimarilyEnglish) {
-    if (/proxy|19999|socks|urnetwork/i.test(trimmed)) {
-      return '正在检测网络代理配置与 19999 端口通信状态...';
-    }
-    if (/git|commit|push|branch/i.test(trimmed)) {
-      return '正在进行 Git 代码版本管理与远端同步...';
-    }
-    if (/build|compile|tsc|vite/i.test(trimmed)) {
-      return '正在执行前后端全量编译构建与类型校验...';
-    }
-    if (/test|verify|check|lint|validate/i.test(trimmed)) {
-      return '正在执行系统安全边界审查与自动化自检...';
-    }
-    if (/port|listen|restart|process|kill/i.test(trimmed)) {
-      return '正在协调后台进程状态与端口常驻监听...';
-    }
-    if (/session|history|message|chat/i.test(trimmed)) {
-      return '正在同步会话上下文与历史交互记录...';
-    }
-    return '正在分析业务逻辑与规划下一步执行动作...';
+  // 3. 网络断开 / EOF / 握手失败
+  if (/connection reset/i.test(trimmed) || /unexpected EOF/i.test(trimmed) || /broken pipe/i.test(trimmed) || /socket hang up/i.test(trimmed)) {
+    return '🌐【网络连接抖动】与 Google 云端通信链路发生短暂闪断，系统已自动重连。请直接回复“继续”重新触发。';
+  }
+
+  // 4. 会话上下文丢失
+  if (/trajectory not found|conversation not found/i.test(trimmed)) {
+    return '🔄【会话状态重置】未检索到该会话历史上下文，系统已自动平滑开启全新交互轮次。';
+  }
+
+  // 5. 凭据过期 (401 / 403 / UNAUTHENTICATED)
+  if (/UNAUTHENTICATED/i.test(trimmed) || /token expired/i.test(trimmed) || /401/i.test(trimmed)) {
+    return '🔑【账号授权过期】当前 Google 账号登录凭据已过期，请前往【设置】->【智能体】重新登录授权。';
   }
 
   return trimmed;

@@ -4,7 +4,7 @@ import { createNormalizedMessage, generateMessageId, sliceTailPage, } from '../.
 import { sessionsDb } from '../../../../modules/database/index.js';
 import { parseFilesInputTag, parseImagesInputTag, } from '../../../../shared/image-attachments.js';
 import { resolveAntigravityStateDir } from './antigravity-auth.provider.js';
-import { localizeEnglishThought } from './antigravity-chinese-filter.js';
+import { humanizeAntigravityError } from './antigravity-chinese-filter.js';
 const PROVIDER = 'antigravity';
 function unwrapAntigravityUserText(value) {
     const match = value.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i);
@@ -126,7 +126,7 @@ export class AntigravitySessionsProvider {
                                     id: generateMessageId('err'),
                                     kind: 'error',
                                     role: 'assistant',
-                                    content: errContent,
+                                    content: humanizeAntigravityError(errContent),
                                     sessionId,
                                     timestamp: ts,
                                     provider: PROVIDER,
@@ -139,7 +139,7 @@ export class AntigravitySessionsProvider {
                                     id: generateMessageId('thk'),
                                     kind: 'thinking',
                                     role: 'assistant',
-                                    content: localizeEnglishThought(entry.thinking),
+                                    content: String(entry.thinking || '').trim(),
                                     sessionId,
                                     timestamp: ts,
                                     provider: PROVIDER,

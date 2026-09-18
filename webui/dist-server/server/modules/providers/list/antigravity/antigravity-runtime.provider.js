@@ -129,8 +129,8 @@ const CHINESE_LANGUAGE_RULE_CONTENT = `# Antigravity 全局语言与思维规范
 - **技术名词规范**：常见行业标准词汇（如 Git, Docker, API, JSON, SOCKS5, Token 等）可保留英文原词，其余文本一律使用中文。
 `;
 export const CHINESE_ENFORCEMENT_PREFIX = '【系统要求：本轮交互所有思维推理(<thinking>)与任务执行分析必须全程100%使用中文撰写，严禁使用任何英文组织思路】\n\n';
-import { localizeEnglishThought } from './antigravity-chinese-filter.js';
-export { localizeEnglishThought };
+import { localizeEnglishThought, humanizeAntigravityError } from './antigravity-chinese-filter.js';
+export { localizeEnglishThought, humanizeAntigravityError };
 export function ensureChineseRules(workingDir) {
     try {
         const homeDir = process.env.AGY_HOME || process.env.HOME || '/tmp/agy-test/home';
@@ -449,15 +449,11 @@ function runAntigravityTurnOnce(params) {
                     return;
                 }
                 // Thought / reasoning
-                let thought = update.thought || update.thinking;
-                if (thought && typeof thought === 'string') {
-                    // 彻底根治英文思考透传：如果思考内容为纯英文，自动本地化为规范中文
-                    if (!/[\u4e00-\u9fa5]/.test(thought)) {
-                        thought = localizeEnglishThought(thought);
-                    }
+                const thought = update.thought || update.thinking;
+                if (thought && typeof thought === 'string' && thought.trim()) {
                     ws.send(createNormalizedMessage({
                         kind: 'thinking',
-                        content: thought,
+                        content: thought.trim(),
                         sessionId: activeSession,
                         provider: 'antigravity',
                     }));
@@ -945,10 +941,11 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
             cleanupProcessTracking();
             return { conversationId: capturedSessionId, exitCode: 0 };
         }
+        const humanizedMsg = humanizeAntigravityError(rawErrMsg);
         if (!abortController.signal.aborted) {
             ws.send(createNormalizedMessage({
                 kind: 'error',
-                content: rawErrMsg,
+                content: humanizedMsg,
                 sessionId: finalSessionId,
                 provider: 'antigravity',
             }));
@@ -958,7 +955,7 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
             sessionId: finalSessionId,
             exitCode: 1,
         }));
-        notifyTerminalState({ code: 1, error: rawErrMsg });
+        notifyTerminalState({ code: 1, error: humanizedMsg });
         cleanupProcessTracking();
         throw err;
     }

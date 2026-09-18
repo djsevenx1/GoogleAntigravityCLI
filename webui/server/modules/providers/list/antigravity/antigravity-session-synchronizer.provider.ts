@@ -85,6 +85,7 @@ function findPrimaryLogFile(logsDir: string): string | null {
 
 export class AntigravitySessionSynchronizer implements IProviderSessionSynchronizer {
   private readonly provider = 'antigravity' as const;
+  private readonly lastSyncTimes = new Map<string, number>();
 
   async synchronize(_since?: Date): Promise<number> {
     const brainDir = path.join(resolveAntigravityStateDir(), 'brain');
@@ -131,11 +132,22 @@ export class AntigravitySessionSynchronizer implements IProviderSessionSynchroni
   }
 
   async synchronizeFile(filePath: string): Promise<string | null> {
-    if (!filePath.includes('transcript')) return null;
+    // 严格过滤：忽略所有 chunks 分片与 full 镜像，仅处理主 transcript.jsonl
+    if (!filePath.endsWith('transcript.jsonl') || filePath.includes('chunks') || filePath.includes('transcript_full')) {
+      return null;
+    }
     const parts = path.normalize(filePath).split(path.sep);
     const brainIdx = parts.lastIndexOf('brain');
     if (brainIdx === -1 || brainIdx + 1 >= parts.length) return null;
     const convId = parts[brainIdx + 1];
+
+    const now = Date.now();
+    const lastSync = this.lastSyncTimes.get(convId) || 0;
+    // 3 秒内同一会话至多同步一次，杜绝密集高频写盘阻塞 Node.js 事件循环
+    if (now - lastSync < 3000) {
+      return convId;
+    }
+    this.lastSyncTimes.set(convId, now);
 
     const stateDir = resolveAntigravityStateDir();
     const logsDir = path.join(stateDir, 'brain', convId, '.system_generated', 'logs');

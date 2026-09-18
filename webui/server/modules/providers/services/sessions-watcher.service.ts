@@ -25,6 +25,8 @@ const WATCHER_IGNORED_PATTERNS = [
   '**/build/**',
   '**/subagents/**',
   '**/tool-results/**',
+  '**/chunks/**',
+  '**/*transcript_full.jsonl',
   '**/*.tmp',
   '**/*.swp',
   '**/.DS_Store',
@@ -58,6 +60,10 @@ let watcherRescheduleAfterRefresh = false;
 function isWatcherTargetFile(provider: LLMProvider, filePath: string): boolean {
   if (provider === 'opencode') {
     return path.basename(filePath) === 'opencode.db';
+  }
+  if (provider === 'antigravity') {
+    // 关键优化：Antigravity 仅监听真正的会话主文件 transcript.jsonl，严禁监听海量 chunks 分片或副本
+    return path.basename(filePath) === 'transcript.jsonl';
   }
 
   return filePath.endsWith('.jsonl');

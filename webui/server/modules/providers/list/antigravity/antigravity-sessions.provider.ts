@@ -19,7 +19,7 @@ import {
   parseImagesInputTag,
 } from '@/shared/image-attachments.js';
 import { resolveAntigravityStateDir } from './antigravity-auth.provider.js';
-import { localizeEnglishThought } from './antigravity-chinese-filter.js';
+import { localizeEnglishThought, humanizeAntigravityError } from './antigravity-chinese-filter.js';
 
 const PROVIDER = 'antigravity';
 
@@ -155,7 +155,7 @@ export class AntigravitySessionsProvider implements IProviderSessions {
                     id: generateMessageId('err'),
                     kind: 'error',
                     role: 'assistant',
-                    content: errContent,
+                    content: humanizeAntigravityError(errContent),
                     sessionId,
                     timestamp: ts,
                     provider: PROVIDER,
@@ -169,7 +169,7 @@ export class AntigravitySessionsProvider implements IProviderSessions {
                     id: generateMessageId('thk'),
                     kind: 'thinking',
                     role: 'assistant',
-                    content: localizeEnglishThought(entry.thinking),
+                    content: String(entry.thinking || '').trim(),
                     sessionId,
                     timestamp: ts,
                     provider: PROVIDER,
