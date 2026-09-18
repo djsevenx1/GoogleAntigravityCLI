@@ -383,6 +383,7 @@ export const api = {
     restartAntigravityProxy: () => post('/api/providers/antigravity/proxy/restart'),
     getAntigravityProxySettings: () => get('/api/providers/antigravity/proxy/settings'),
     saveAntigravityProxySettings: (data: any) => post('/api/providers/antigravity/proxy/settings', data),
+    setAntigravityProxyToggle: (mode: string) => post('/api/providers/antigravity/proxy-toggle', { mode }),
     testAntigravityProxy: (mode?: string) => post('/api/providers/antigravity/proxy-test', { mode }),
 
     models: (provider: string) => get(`/api/providers/${provider}/models`),

@@ -89,7 +89,10 @@ export function readUrnAuth(): UrnAuthConfig {
 
 export function writeUrnAuth(vals: Partial<UrnAuthConfig>): void {
   const cur = readUrnAuth();
-  const v = { ...cur, ...vals };
+  // 防御性设计：如果传入账号或密码为空，自动保留已有的凭据，严防被清空
+  const safeUserAuth = (vals.userAuth && vals.userAuth.trim()) ? vals.userAuth.trim() : cur.userAuth;
+  const safePassword = (vals.password && vals.password.trim()) ? vals.password.trim() : cur.password;
+  const v = { ...cur, ...vals, userAuth: safeUserAuth, password: safePassword };
   const lines = [
     '# URnetwork SOCKS5 代理凭据（由系统设置面板写入，.gitignore 忽略不外传）',
     `URN_USER_AUTH="${v.userAuth}"`,
@@ -192,6 +195,69 @@ export function getProxyToggle(): 'yes' | 'no' {
   return 'yes';
 }
 
+export function isSocksListening(port = 19999): boolean {
+  try {
+    const r = execFileSync('ss', ['-tln', `sport = :${port}`], { encoding: 'utf8' });
+    return r.includes(`:${port} `);
+  } catch (_) {
+    return false;
+  }
+}
+
+export function startUrnSocksInstant(): { ok: boolean; message: string; socksListening: boolean } {
+  if (isSocksListening(19999)) {
+    return { ok: true, message: 'SOCKS5 代理已在运行中', socksListening: true };
+  }
+
+  const urn = readUrnAuth();
+  if (!urn.userAuth || !urn.password) {
+    return { ok: false, message: '未配置代理账号或密码', socksListening: false };
+  }
+
+  const socksBin = '/vol1/@apphome/GoogleAntigravityCLI/urnetwork/urnetwork-socks';
+  const logFile = '/vol1/@apphome/GoogleAntigravityCLI/urnetwork/socks.log';
+  if (!fs.existsSync(socksBin)) {
+    return { ok: false, message: '代理核心程序不存在', socksListening: false };
+  }
+
+  try {
+    const args = [
+      `--addr="127.0.0.1:19999"`,
+      `--user-auth="${urn.userAuth}"`,
+      `--password="${urn.password}"`,
+      `--country="${urn.country || 'United States'}"`,
+      urn.region ? `--region="${urn.region}"` : '',
+      urn.city ? `--city="${urn.city}"` : '',
+      urn.providerId ? `--provider-id="${urn.providerId}"` : '',
+    ].filter(Boolean).join(' ');
+
+    exec(`nohup "${socksBin}" ${args} >> "${logFile}" 2>&1 &`);
+
+    // 毫秒级轮询等待端口就绪（最多等待 3 秒）
+    const start = Date.now();
+    while (Date.now() - start < 3000) {
+      if (isSocksListening(19999)) {
+        return { ok: true, message: 'SOCKS5 代理已瞬间启动', socksListening: true };
+      }
+      execFileSync('sleep', ['0.15']);
+    }
+  } catch (err: any) {
+    return { ok: false, message: '启动代理异常: ' + (err?.message || '未知错误'), socksListening: false };
+  }
+
+  const listening = isSocksListening(19999);
+  return { ok: listening, message: listening ? 'SOCKS5 代理已瞬间启动' : '代理启动中...', socksListening: listening };
+}
+
+export function stopUrnSocksInstant(): { ok: boolean; message: string; socksListening: boolean } {
+  try {
+    execFileSync('pkill', ['-9', '-f', 'urnetwork/urnetwork-socks'], { encoding: 'utf8' });
+    execFileSync('sleep', ['0.1']);
+  } catch (_) {}
+  const listening = isSocksListening(19999);
+  return { ok: !listening, message: 'SOCKS5 代理已瞬间关闭', socksListening: listening };
+}
+
 export function setProxyToggle(mode: 'yes' | 'no' | string): 'yes' | 'no' {
   const norm: 'yes' | 'no' =
     String(mode).trim().toLowerCase() === 'no' ||
@@ -206,11 +272,12 @@ export function setProxyToggle(mode: 'yes' | 'no' | string): 'yes' | 'no' {
     } catch (_) {}
   }
 
-  if (norm === 'no') {
-    // Kill urnetwork-socks when direct connection is chosen to save resources
-    try {
-      exec('pkill -f "urnetwork/urnetwork-socks" 2>/dev/null || true');
-    } catch (_) {}
+  if (norm === 'yes') {
+    // 瞬间拉起 19999 代理
+    startUrnSocksInstant();
+  } else {
+    // 瞬间关闭 19999 代理
+    stopUrnSocksInstant();
   }
 
   return norm;

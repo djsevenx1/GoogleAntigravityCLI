@@ -240,11 +240,8 @@ function runAntigravityTurnOnce(params) {
         const baseArgs = [
             '--input-format', 'stream-json',
             '--output-format', 'stream-json',
-            // Idle-wait for the next stdin prompt after a turn. The runtime SIGKILLs
-            // the process on turn completion, but if the server dies mid-run the
-            // CLI is orphaned and lingers for this long — 24h was far too long and
-            // let crash-orphaned processes pile up. 10m is a safe idle ceiling.
-            '--print-timeout', process.env.AGY_PRINT_TIMEOUT || '10m',
+            // 单回合最大执行超时放宽至 24 小时，彻底支持过夜挂机、深度自动化分析与超大工程重构
+            '--print-timeout', process.env.AGY_PRINT_TIMEOUT || '24h',
         ];
         const { resolvedModel, resolvedEffort } = resolveAntigravityModelAndEffort(model, effort);
         if (resolvedModel) {

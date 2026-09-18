@@ -255,6 +255,29 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
     }
   };
 
+  const handleToggleMasterProxy = async (nextVal: boolean) => {
+    setProxyEnabled(nextVal);
+    setErrorMsg(null);
+    try {
+      const res = await api.providers.setAntigravityProxyToggle(nextVal ? 'yes' : 'no');
+      if (res.ok) {
+        const d = await readApiJson<any>(res);
+        const data = d?.data || d;
+        if (data?.status) {
+          setProxyStatus(data.status);
+        }
+        setSuccessMsg(`✓ SOCKS5 代理已瞬间${nextVal ? '启动就绪' : '关闭释放'}`);
+        setTimeout(() => setSuccessMsg(null), 3000);
+        setTimeout(() => void loadAllSettings(), 800);
+      } else {
+        const d = await readApiJson<any>(res);
+        setErrorMsg('切换代理失败: ' + (d?.data?.error || d?.error || '未知错误'));
+      }
+    } catch (e: any) {
+      setErrorMsg('切换异常: ' + (e?.message || '网络异常'));
+    }
+  };
+
   const handleSaveSettings = async () => {
     setIsSaving(true);
     setErrorMsg(null);
@@ -265,7 +288,7 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
       proxy: {
         enabled: proxyEnabled,
         mode: proxyEnabled ? 'yes' : 'no',
-        userAuth: userAuth.trim(),
+        userAuth: userAuth.trim() ? userAuth.trim() : undefined,
         password: password ? password : undefined,
         country: finalCountry || 'United States',
         region: region.trim(),
@@ -558,7 +581,7 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
               type="button"
               role="switch"
               aria-checked={proxyEnabled}
-              onClick={() => setProxyEnabled(!proxyEnabled)}
+              onClick={() => void handleToggleMasterProxy(!proxyEnabled)}
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/40 ${
                 proxyEnabled ? 'bg-emerald-500' : 'bg-muted'
               }`}

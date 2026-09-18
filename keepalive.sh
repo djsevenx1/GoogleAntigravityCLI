@@ -19,40 +19,48 @@ URNETWORK_SOCKS_LOG="$(pwd)/urnetwork/socks.log"
 URN_AUTH_FILE="$(pwd)/data/urn-auth.env"
 
 if [ -x "$URNETWORK_SOCKS" ]; then
-  echo "[socks] 启动 URnetwork SOCKS5 守护 (127.0.0.1:${URNETWORK_SOCKS_PORT})…"
+  # 方案二：开机检查代理开关状态，开启则跟随启动，关闭则不启动
+  BOOT_TOGGLE="$(cat "$(pwd)/proxy-toggle.txt" 2>/dev/null | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
+  if [ "$BOOT_TOGGLE" = "no" ] || [ "$BOOT_TOGGLE" = "off" ] || [ "$BOOT_TOGGLE" = "false" ]; then
+    echo "[socks] 开机检查：代理处于【关闭】模式，不启动 19999 代理"
+  else
+    echo "[socks] 开机检查：代理处于【开启】模式，自动跟随启动 19999 代理…"
+  fi
+
   (
     export LD_LIBRARY_PATH="$(pwd)/urnetwork"
     while true; do
       PROXY_TOGGLE="$(cat "$(pwd)/proxy-toggle.txt" 2>/dev/null | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
       if [ "$PROXY_TOGGLE" = "no" ] || [ "$PROXY_TOGGLE" = "off" ] || [ "$PROXY_TOGGLE" = "false" ]; then
         if pgrep -f "urnetwork/urnetwork-socks" >/dev/null 2>&1; then
-          pkill -f "urnetwork/urnetwork-socks" 2>/dev/null || true
-          echo "[socks] $(date '+%F %T'): 检测到 proxy-toggle=no，已停止 SOCKS5 代理（直连模式）" >> "$URNETWORK_SOCKS_LOG"
+          pkill -9 -f "urnetwork/urnetwork-socks" 2>/dev/null || true
+          echo "[socks] $(date '+%F %T'): 检测到代理关闭(proxy-toggle=no)，已停止 19999 代理进程" >> "$URNETWORK_SOCKS_LOG"
         fi
-        sleep 5
+        sleep 2
         continue
       fi
 
       if ! ss -tlnp 2>/dev/null | grep -q ":${URNETWORK_SOCKS_PORT} "; then
-        # 每次启动前重新读取 urn-auth.env，使面板改的账号密码/节点即时生效
+        # 重新读取 urn-auth.env
         [ -f "$URN_AUTH_FILE" ] && source "$URN_AUTH_FILE"
-        echo "[socks] $(date '+%F %T'): 启动 urnetwork-socks (country=${URN_COUNTRY:-US})" >> "$URNETWORK_SOCKS_LOG"
-        "$URNETWORK_SOCKS" \
-          --user-auth="${URN_USER_AUTH:-}" \
-          --password="${URN_PASSWORD:-}" \
-          --addr="127.0.0.1:${URNETWORK_SOCKS_PORT}" \
-          --country="${URN_COUNTRY:-United States}" \
-          ${URN_REGION:+--region="$URN_REGION"} \
-          ${URN_CITY:+--city="$URN_CITY"} \
-          ${URN_PROVIDER_ID:+--provider-id="$URN_PROVIDER_ID"} >> "$URNETWORK_SOCKS_LOG" 2>&1 || true
-        echo "[socks] $(date '+%F %T'): urnetwork-socks 退出，1秒后重启" >> "$URNETWORK_SOCKS_LOG"
+        if [ -n "${URN_USER_AUTH:-}" ] && [ -n "${URN_PASSWORD:-}" ]; then
+          echo "[socks] $(date '+%F %T'): 开机/掉线自愈，拉起 urnetwork-socks (country=${URN_COUNTRY:-US})" >> "$URNETWORK_SOCKS_LOG"
+          "$URNETWORK_SOCKS" \
+            --user-auth="${URN_USER_AUTH:-}" \
+            --password="${URN_PASSWORD:-}" \
+            --addr="127.0.0.1:${URNETWORK_SOCKS_PORT}" \
+            --country="${URN_COUNTRY:-United States}" \
+            ${URN_REGION:+--region="$URN_REGION"} \
+            ${URN_CITY:+--city="$URN_CITY"} \
+            ${URN_PROVIDER_ID:+--provider-id="$URN_PROVIDER_ID"} >> "$URNETWORK_SOCKS_LOG" 2>&1 || true
+        fi
         sleep 1
       else
-        sleep 3
+        sleep 2
       fi
     done
   ) 200>&- &
-  echo "[socks] 守护进程 PID=$!"
+  echo "[socks] 代理守护进程就绪 PID=$!"
 fi
 
 echo "[keepalive] 准备启动现代化 Antigravity WebUI (端口 3100)..."
