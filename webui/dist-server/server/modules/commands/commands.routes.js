@@ -189,6 +189,24 @@ export function createCommandsRouter(dependencies) {
             metadata: { type: "builtin", insertable: true },
         },
         {
+            name: "/schedule",
+            description: "定时调度模式（单次定时提醒或 Cron 周期自动巡检任务）",
+            namespace: "builtin",
+            metadata: { type: "builtin", insertable: true },
+        },
+        {
+            name: "/teamwork-preview",
+            description: "多智能体团队协作预览（大型工程多 Agent 自动分工协同）",
+            namespace: "builtin",
+            metadata: { type: "builtin", insertable: true },
+        },
+        {
+            name: "/learn",
+            description: "经验沉淀自学习模式（将纠正或配置持久化固化为规则）",
+            namespace: "builtin",
+            metadata: { type: "builtin", insertable: true },
+        },
+        {
             name: "/config",
             description: "打开系统运行时配置与偏好设置",
             namespace: "builtin",
@@ -271,6 +289,30 @@ ${cmd.description}
             action: "guide",
             data: {
                 content: "🎯 **目标推进模式**: 请在输入框输入 `/goal <长线目标>`，系统将不间断自主推进，直至目标达成。",
+                format: "markdown",
+            },
+        }),
+        "/schedule": async (args) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: "⏰ **定时调度模式**: 请在输入框输入 `/schedule <任务内容与时间>`，支持单次定时（如 10 分钟后提醒）或周期 Cron 巡检。",
+                format: "markdown",
+            },
+        }),
+        "/teamwork-preview": async (args) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: "👥 **多智能体团队协作**: 请在输入框输入 `/teamwork-preview <复杂工程项目>`，系统将自动分配多个专业子 Agent 协同推进。",
+                format: "markdown",
+            },
+        }),
+        "/learn": async (args) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: "🧠 **经验沉淀自学习**: 请在输入框输入 `/learn <需要沉淀的规范或配置>`，系统将自动固化至项目的规则知识库中。",
                 format: "markdown",
             },
         }),
