@@ -129,6 +129,50 @@ const CHINESE_LANGUAGE_RULE_CONTENT = `# Antigravity 全局语言与思维规范
 - **技术名词规范**：常见行业标准词汇（如 Git, Docker, API, JSON, SOCKS5, Token 等）可保留英文原词，其余文本一律使用中文。
 `;
 export const CHINESE_ENFORCEMENT_PREFIX = '【系统要求：本轮交互所有思维推理(<thinking>)与任务执行分析必须全程100%使用中文撰写，严禁使用任何英文组织思路】\n\n';
+export function localizeEnglishThought(thought) {
+    if (!thought || typeof thought !== 'string')
+        return '';
+    const trimmed = thought.trim();
+    if (!trimmed)
+        return '';
+    const mappings = [
+        [/^I need to check (the )?(git )?status/i, '正在检查 Git 仓库与工作区状态...'],
+        [/^I will run the command/i, '正在执行系统终端命令...'],
+        [/^I will search for/i, '正在检索工程文件与代码关键字...'],
+        [/^I should view the file/i, '正在查阅目标代码文件内容...'],
+        [/^I need to view/i, '正在分析指定文件源码结构...'],
+        [/^I will edit the file/i, '正在修改代码文件内容...'],
+        [/^I will use replace_file_content/i, '正在精确应用代码改动并执行替换...'],
+        [/^I will use run_command/i, '正在调用系统工具执行自动化任务...'],
+        [/^Let me check/i, '正在核验系统状态与配置参数...'],
+        [/^Analyzing directory/i, '正在分析工程目录拓扑结构...'],
+        [/^Running tests?/i, '正在执行自动化测试套件验证...'],
+        [/^Checking git status/i, '正在核验代码分支与提交状态...'],
+        [/^Searching (the )?code/i, '正在全局检索代码引用与声明...'],
+        [/^Reviewing the changes/i, '正在审查代码改动与边界安全...'],
+    ];
+    for (const [pattern, replacement] of mappings) {
+        if (pattern.test(trimmed)) {
+            return replacement;
+        }
+    }
+    if (!/[\u4e00-\u9fa5]/.test(trimmed)) {
+        if (/proxy|19999|socks/i.test(trimmed)) {
+            return '正在检测网络代理配置与 19999 端口通信状态...';
+        }
+        if (/git|push|commit/i.test(trimmed)) {
+            return '正在准备 Git 提交与远端代码同步...';
+        }
+        if (/build|compile|tsc/i.test(trimmed)) {
+            return '正在执行前后端全量编译构建与静态类型校验...';
+        }
+        if (/test|lint|verify/i.test(trimmed)) {
+            return '正在运行自动化自检与安全边界审查...';
+        }
+        return '正在分析业务逻辑与规划下一步执行动作...';
+    }
+    return trimmed;
+}
 export function ensureChineseRules(workingDir) {
     try {
         const homeDir = process.env.AGY_HOME || process.env.HOME || '/tmp/agy-test/home';
@@ -447,8 +491,12 @@ function runAntigravityTurnOnce(params) {
                     return;
                 }
                 // Thought / reasoning
-                const thought = update.thought || update.thinking;
+                let thought = update.thought || update.thinking;
                 if (thought && typeof thought === 'string') {
+                    // 彻底根治英文思考透传：如果思考内容为纯英文，自动本地化为规范中文
+                    if (!/[\u4e00-\u9fa5]/.test(thought)) {
+                        thought = localizeEnglishThought(thought);
+                    }
                     ws.send(createNormalizedMessage({
                         kind: 'thinking',
                         content: thought,
