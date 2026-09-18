@@ -932,12 +932,26 @@ export async function spawnAntigravity(
         }
 
         // 3. Stream Interrupted / Proxy EOF / Connection reset / Stream drop
-        const isStreamInterrupted = /stream was interrupted|please continue the task/i.test(errMsg);
-        const isProxyEOF = /EOF|connection reset by peer|stream ended|unexpected EOF|stream was interrupted|please continue the task/i.test(errMsg);
+        // 3. Stream Interrupted / Proxy EOF / Connection reset / Stream drop / Subscriber stalled / Google 403 WAF
+        const isGoogleWaf403 = /code 403|Forbidden|robot\.png/i.test(errMsg);
+        if (isGoogleWaf403 && attempt < TOTAL_MAX_ATTEMPTS) {
+          console.warn(`[Antigravity Runtime] Google 403 WAF / IP block detected (attempt ${attempt}/${TOTAL_MAX_ATTEMPTS}), rotating proxy node and retrying...`);
+          try {
+            exec('pkill -f "urnetwork/urnetwork-socks" 2>/dev/null || true');
+          } catch (_) {}
+          await new Promise((r) => setTimeout(r, 6000));
+          if (capturedSessionId) {
+            currentPrompt = '继续';
+          }
+          continue;
+        }
+
+        const isStreamInterrupted = /stream was interrupted|please continue the task|subscriber fell behind updates|stalled for|interrupted before the response finished/i.test(errMsg);
+        const isProxyEOF = /EOF|connection reset by peer|stream ended|unexpected EOF|stream was interrupted|please continue the task|subscriber fell behind updates|stalled for|interrupted before the response finished/i.test(errMsg);
         if (isProxyEOF && attempt < TOTAL_MAX_ATTEMPTS) {
           const isProxy = getProxyToggle() === 'yes';
           if (isStreamInterrupted) {
-            console.warn(`[Antigravity Runtime] Stream interrupted by upstream (attempt ${attempt}/${TOTAL_MAX_ATTEMPTS}). Auto-resuming seamlessly with '继续'...`);
+            console.warn(`[Antigravity Runtime] Stream interrupted / stalled (attempt ${attempt}/${TOTAL_MAX_ATTEMPTS}). Auto-resuming seamlessly with '继续'...`);
             if (capturedSessionId) {
               currentPrompt = '继续';
             }
@@ -1047,7 +1061,7 @@ export async function spawnAntigravity(
     // turn paused mid-stream and the next user message picks it back up. Only
     // this exact signal is softened; genuine failures (connection reset,
     // auth/token timeout, proxy EOF) stay fatal red errors below.
-    const isRecoverableStreamPause = /stream was interrupted.*please continue|please continue the task|stream was interrupted/i.test(rawErrMsg);
+    const isRecoverableStreamPause = /stream was interrupted.*please continue|please continue the task|stream was interrupted|subscriber fell behind updates|stalled for|interrupted before the response finished/i.test(rawErrMsg);
 
     if (isRecoverableStreamPause) {
       if (!abortController.signal.aborted) {
