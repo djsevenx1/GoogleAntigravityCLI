@@ -123,6 +123,51 @@ function mapFileSystemError(error, messages) {
     }
     throw error;
 }
+function cleanAndExtractCandidatePath(raw) {
+    const candidates = [];
+    if (!raw || typeof raw !== 'string')
+        return candidates;
+    const trimmed = raw.trim();
+    candidates.push(trimmed);
+    const unquoted = trimmed.replace(/^["'`]|["'`]$/g, '').trim();
+    if (unquoted && !candidates.includes(unquoted))
+        candidates.push(unquoted);
+    const parenMatch = trimmed.match(/\(([^)]+\.[a-zA-Z0-9_-]+)\)/);
+    if (parenMatch && parenMatch[1]) {
+        const inside = parenMatch[1].trim();
+        if (!candidates.includes(inside))
+            candidates.push(inside);
+    }
+    const extMatch = trimmed.match(/([a-zA-Z0-9_.\-\/\\]+\.[a-zA-Z0-9]+)/);
+    if (extMatch && extMatch[1]) {
+        const extPath = extMatch[1].trim();
+        if (!candidates.includes(extPath))
+            candidates.push(extPath);
+    }
+    return candidates;
+}
+async function searchFileInProject(fileSystem, projectRoot, fileName) {
+    if (!fileName || !fileName.trim())
+        return null;
+    const probeDirs = [
+        projectRoot,
+        path.join(projectRoot, 'lib'),
+        path.join(projectRoot, 'src'),
+        path.join(projectRoot, 'app'),
+        path.join(projectRoot, 'test'),
+        path.join(projectRoot, 'scripts'),
+    ];
+    for (const dir of probeDirs) {
+        const full = path.join(dir, fileName);
+        try {
+            const st = await fileSystem.stat(full);
+            if (st.isFile())
+                return full;
+        }
+        catch { }
+    }
+    return null;
+}
 function createGitignoreEntryFilter(projectRoot, gitignoreContent) {
     const gitignore = ignore().add(gitignoreContent);
     return (entryPath, isDirectory) => {
@@ -374,37 +419,86 @@ export function createFileTreeService(dependencies) {
         },
         async readTextFile(projectId, filePath) {
             const projectRoot = await resolveProjectRoot(projectId);
-            const resolvedPath = resolvePathInsideProject(projectRoot, filePath);
-            try {
-                const content = await fileSystem.readTextFile(resolvedPath);
-                return { content, path: resolvedPath };
+            const candidates = cleanAndExtractCandidatePath(filePath);
+            let lastError = null;
+            for (const candidate of candidates) {
+                try {
+                    const resolvedPath = resolvePathInsideProject(projectRoot, candidate);
+                    const content = await fileSystem.readTextFile(resolvedPath);
+                    return { content, path: resolvedPath };
+                }
+                catch (error) {
+                    lastError = error;
+                    const code = readErrorCode(error);
+                    if (code !== 'ENOENT') {
+                        throw error;
+                    }
+                }
             }
-            catch (error) {
-                mapFileSystemError(error, {
-                    ENOENT: { message: 'File not found', statusCode: 404 },
-                    EACCES: { message: 'Permission denied', statusCode: 403 },
-                });
+            // 如果直接候选未命中，尝试在项目关键目录模糊定位同名文件
+            const candidateWithExt = candidates.find((c) => /\.[a-zA-Z0-9]+$/.test(c));
+            if (candidateWithExt) {
+                const baseName = path.basename(candidateWithExt);
+                const matchedPath = await searchFileInProject(fileSystem, projectRoot, baseName);
+                if (matchedPath) {
+                    const content = await fileSystem.readTextFile(matchedPath);
+                    return { content, path: matchedPath };
+                }
             }
+            mapFileSystemError(lastError, {
+                ENOENT: { message: 'File not found', statusCode: 404 },
+                EACCES: { message: 'Permission denied', statusCode: 403 },
+            });
         },
         async openFile(projectId, filePath) {
             const projectRoot = await resolveProjectRoot(projectId);
-            const resolvedPath = resolvePathInsideProject(projectRoot, filePath);
-            try {
-                await fileSystem.access(resolvedPath);
+            const candidates = cleanAndExtractCandidatePath(filePath);
+            let lastPath = null;
+            for (const candidate of candidates) {
+                try {
+                    const resolvedPath = resolvePathInsideProject(projectRoot, candidate);
+                    await fileSystem.access(resolvedPath);
+                    lastPath = resolvedPath;
+                    break;
+                }
+                catch {
+                    // 继续尝试下一个候选
+                }
             }
-            catch {
+            if (!lastPath) {
+                const candidateWithExt = candidates.find((c) => /\.[a-zA-Z0-9]+$/.test(c));
+                if (candidateWithExt) {
+                    const baseName = path.basename(candidateWithExt);
+                    const matchedPath = await searchFileInProject(fileSystem, projectRoot, baseName);
+                    if (matchedPath) {
+                        lastPath = matchedPath;
+                    }
+                }
+            }
+            if (!lastPath) {
                 throw createFileTreeError('File not found', 404, 'FILE_NOT_FOUND');
             }
             return {
-                contentType: dependencies.resolveMimeType(resolvedPath),
-                stream: fileSystem.createReadStream(resolvedPath),
+                contentType: dependencies.resolveMimeType(lastPath),
+                stream: fileSystem.createReadStream(lastPath),
             };
         },
         async saveTextFile(projectId, filePath, content) {
             const projectRoot = await resolveProjectRoot(projectId);
-            const resolvedPath = resolvePathInsideProject(projectRoot, filePath);
+            const candidates = cleanAndExtractCandidatePath(filePath);
+            let targetResolvedPath = resolvePathInsideProject(projectRoot, candidates[0] || filePath);
+            // 探测是否存在匹配的已有真实文件路径
+            for (const candidate of candidates) {
+                try {
+                    const resolvedPath = resolvePathInsideProject(projectRoot, candidate);
+                    await fileSystem.access(resolvedPath);
+                    targetResolvedPath = resolvedPath;
+                    break;
+                }
+                catch { }
+            }
             try {
-                await fileSystem.writeTextFile(resolvedPath, content);
+                await fileSystem.writeTextFile(targetResolvedPath, content);
             }
             catch (error) {
                 mapFileSystemError(error, {
@@ -412,7 +506,7 @@ export function createFileTreeService(dependencies) {
                     EACCES: { message: 'Permission denied', statusCode: 403 },
                 });
             }
-            return { success: true, path: resolvedPath, message: 'File saved successfully' };
+            return { success: true, path: targetResolvedPath, message: 'File saved successfully' };
         },
         async listProjectFiles(projectId, options) {
             const projectRoot = await resolveProjectRoot(projectId);

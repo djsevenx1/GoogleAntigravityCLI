@@ -107,8 +107,30 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
 
   const handleAction = useCallback(() => {
     if (displayConfig?.action === 'open-file' && onFileOpen) {
-      const value = displayConfig.getValue?.(parsedData) || '';
-      onFileOpen(value);
+      let targetFile =
+        displayConfig.getFilePath?.(parsedData) ||
+        parsedData?.AbsolutePath ||
+        parsedData?.TargetFile ||
+        parsedData?.target_file ||
+        parsedData?.filePath ||
+        parsedData?.file_path ||
+        parsedData?.path ||
+        '';
+
+      if (!targetFile && displayConfig.getValue) {
+        targetFile = displayConfig.getValue(parsedData) || '';
+      }
+
+      if (typeof targetFile === 'string') {
+        let clean = targetFile.trim().replace(/^["'`]|["'`]$/g, '');
+        const parenMatch = clean.match(/\(([^)]+\.[a-zA-Z0-9_-]+)\)/);
+        if (parenMatch) {
+          clean = parenMatch[1].trim();
+        }
+        if (clean) {
+          onFileOpen(clean);
+        }
+      }
     }
   }, [displayConfig, parsedData, onFileOpen]);
 

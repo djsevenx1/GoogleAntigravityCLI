@@ -35,7 +35,13 @@ const flatten = (nodes: FileNode[], out: FlatFile[]): void => {
 // paths (`utils/foo.ts`) rather than full paths, so match by path suffix and
 // fall back to filename equality.
 const findBestMatch = (files: FlatFile[], ref: string): string | null => {
-  const target = normalize(ref).replace(/^\.\//, '').replace(/^\/+/, '');
+  let cleaned = ref.trim().replace(/^["'`]|["'`]$/g, '');
+  const parenMatch = cleaned.match(/\(([^)]+\.[a-zA-Z0-9_-]+)\)/);
+  if (parenMatch) {
+    cleaned = parenMatch[1].trim();
+  }
+
+  const target = normalize(cleaned).replace(/^\.\//, '').replace(/^\/+/, '');
   if (!target) {
     return null;
   }
@@ -97,10 +103,14 @@ export function useFileOpenResolver(
 
   return useCallback(
     (filePath: string, diffInfo?: any) => {
-      const ref = normalize(filePath).trim();
+      let ref = normalize(filePath).trim().replace(/^["'`]|["'`]$/g, '');
+      const parenMatch = ref.match(/\(([^)]+\.[a-zA-Z0-9_-]+)\)/);
+      if (parenMatch) {
+        ref = parenMatch[1].trim();
+      }
       void loadFiles().then((files) => {
         const match = findBestMatch(files, ref);
-        onFileOpen(match ?? filePath, diffInfo);
+        onFileOpen(match ?? ref, diffInfo);
       });
     },
     [loadFiles, onFileOpen],

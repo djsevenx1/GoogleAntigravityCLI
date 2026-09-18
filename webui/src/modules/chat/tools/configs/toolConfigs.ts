@@ -10,6 +10,7 @@ export type ToolDisplayConfig = {
     icon?: string;
     label?: string;
     getValue?: (input: any) => string;
+    getFilePath?: (input: any) => string;
     getSecondary?: (input: any) => string | undefined;
     action?: 'copy' | 'open-file' | 'jump-to-results' | 'none';
     style?: string;
@@ -240,6 +241,7 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
         }
         return file ? `查看 ${file}` : (act || '查看文件');
       },
+      getFilePath: (input) => input.AbsolutePath || input.path || input.filePath || '',
       action: 'open-file',
       colorScheme: {
         primary: 'text-gray-700 dark:text-gray-300',
@@ -686,6 +688,7 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
       type: 'one-line',
       label: 'Read',
       getValue: (input) => input.file_path || '',
+      getFilePath: (input) => input.file_path || '',
       action: 'open-file',
       colorScheme: {
         primary: 'text-gray-700 dark:text-gray-300',
