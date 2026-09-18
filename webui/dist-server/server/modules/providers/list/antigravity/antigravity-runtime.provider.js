@@ -287,6 +287,28 @@ function runAntigravityTurnOnce(params) {
         onProcessSpawned(antigravityProcess);
         let isSettled = false;
         let cleanupBackgroundTimer = null;
+        let watchdogTimer = null;
+        let turnConversationId = capturedSessionId;
+        let turnUsage = undefined;
+        const onAbort = () => {
+            if (watchdogTimer) {
+                clearInterval(watchdogTimer);
+                watchdogTimer = null;
+            }
+            if (cleanupBackgroundTimer) {
+                clearTimeout(cleanupBackgroundTimer);
+                cleanupBackgroundTimer = null;
+            }
+            if (isSettled)
+                return;
+            isSettled = true;
+            try {
+                antigravityProcess.kill('SIGTERM');
+            }
+            catch (_) { }
+            reject(new Error('context canceled'));
+        };
+        abortSignal.addEventListener('abort', onAbort, { once: true });
         const finishSuccess = () => {
             if (isSettled)
                 return;
@@ -298,6 +320,10 @@ function runAntigravityTurnOnce(params) {
                     antigravityProcess.stdin.end();
                 }
                 catch (_) { }
+            }
+            if (watchdogTimer) {
+                clearInterval(watchdogTimer);
+                watchdogTimer = null;
             }
             // 优雅宽限期：留出30秒充足时间让子进程自然完成后台I/O与清理，避免截断异步子任务
             cleanupBackgroundTimer = setTimeout(() => {
@@ -314,25 +340,8 @@ function runAntigravityTurnOnce(params) {
                 usage: turnUsage,
             });
         };
-        const onAbort = () => {
-            if (cleanupBackgroundTimer) {
-                clearTimeout(cleanupBackgroundTimer);
-                cleanupBackgroundTimer = null;
-            }
-            if (isSettled)
-                return;
-            isSettled = true;
-            try {
-                antigravityProcess.kill('SIGTERM');
-            }
-            catch (_) { }
-            reject(new Error('context canceled'));
-        };
-        abortSignal.addEventListener('abort', onAbort, { once: true });
         let stdoutLineBuffer = '';
         let turnEmitted = '';
-        let turnConversationId = capturedSessionId;
-        let turnUsage = undefined;
         let turnHasSucceeded = false;
         let lastStderrError = '';
         let quotaErrorDetails = null;
@@ -552,8 +561,40 @@ function runAntigravityTurnOnce(params) {
         if (prompt && antigravityProcess.stdin) {
             antigravityProcess.stdin.write(JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n');
         }
+        // 启动 35 秒流活跃看门狗：监控底层数据流输出，彻底根除因代理掉线卡死或CLI内部指数退避长达数分钟导致的“卡思考”
+        let lastActivityTime = Date.now();
+        const INACTIVITY_TIMEOUT_MS = 35_000;
+        watchdogTimer = setInterval(() => {
+            if (isSettled) {
+                if (watchdogTimer) {
+                    clearInterval(watchdogTimer);
+                    watchdogTimer = null;
+                }
+                return;
+            }
+            const idleMs = Date.now() - lastActivityTime;
+            if (idleMs > INACTIVITY_TIMEOUT_MS) {
+                console.warn(`[Antigravity Runtime] 🚨 流活跃看门狗触发: 连续 ${Math.round(idleMs / 1000)} 秒无输出（底层卡在内部重试或断流），强行破局拉起自愈...`);
+                if (watchdogTimer) {
+                    clearInterval(watchdogTimer);
+                    watchdogTimer = null;
+                }
+                lastStderrError = 'stream was interrupted: inactivity watchdog triggered after 35s';
+                if (getProxyToggle() === 'yes') {
+                    try {
+                        exec('pkill -f "urnetwork/urnetwork-socks" 2>/dev/null || true');
+                    }
+                    catch (_) { }
+                }
+                try {
+                    antigravityProcess.kill('SIGTERM');
+                }
+                catch (_) { }
+            }
+        }, 5_000);
         const stdoutDecoder = new StringDecoder('utf8');
         antigravityProcess.stdout?.on('data', (chunk) => {
+            lastActivityTime = Date.now();
             stdoutLineBuffer += stdoutDecoder.write(chunk);
             const lines = stdoutLineBuffer.split(/\r?\n/);
             stdoutLineBuffer = lines.pop() || '';
@@ -562,6 +603,7 @@ function runAntigravityTurnOnce(params) {
             }
         });
         antigravityProcess.stderr?.on('data', (chunk) => {
+            lastActivityTime = Date.now();
             const text = chunk.toString();
             console.error('[Antigravity CLI stderr]:', text);
             if (text.includes('ERROR') || text.includes('error') || text.includes('failed') || text.includes('RESOURCE_EXHAUSTED')) {
@@ -601,6 +643,10 @@ function runAntigravityTurnOnce(params) {
             }
         });
         antigravityProcess.on('close', (code) => {
+            if (watchdogTimer) {
+                clearInterval(watchdogTimer);
+                watchdogTimer = null;
+            }
             if (cleanupBackgroundTimer) {
                 clearTimeout(cleanupBackgroundTimer);
                 cleanupBackgroundTimer = null;
