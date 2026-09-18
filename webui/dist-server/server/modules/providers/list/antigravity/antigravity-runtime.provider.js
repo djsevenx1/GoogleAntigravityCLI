@@ -9,6 +9,8 @@ import { createCompleteMessage, createNormalizedMessage, generateMessageId, } fr
 import { resolveAntigravityBinary } from './antigravity-auth.provider.js';
 import { getProxyToggle, resolveAntigravityProxyEnv } from './antigravity-proxy.js';
 import { antigravityAccountsService } from './antigravity-accounts.service.js';
+import { localizeEnglishThought, humanizeAntigravityError } from './antigravity-chinese-filter.js';
+export { localizeEnglishThought, humanizeAntigravityError };
 const spawnFunction = crossSpawn;
 const activeAntigravityProcesses = new Map();
 const activeAbortControllers = new Map();
@@ -61,7 +63,8 @@ function reapOrphanedAntigravityProcesses() {
     }
     catch { /* /proc not available (non-Linux) — no-op */ }
 }
-reapOrphanedAntigravityProcesses();
+// 禁用模块加载时顶层无差别强杀：防止在多会话或长任务执行时，误杀当前活跃进程与后台子任务
+// reapOrphanedAntigravityProcesses();
 function resolveAntigravityPermissionArgs(permissionMode, skipPermissions) {
     if (skipPermissions || permissionMode === 'bypassPermissions' || permissionMode === 'auto') {
         return ['--dangerously-skip-permissions'];
@@ -129,8 +132,6 @@ const CHINESE_LANGUAGE_RULE_CONTENT = `# Antigravity 全局语言与思维规范
 - **技术名词规范**：常见行业标准词汇（如 Git, Docker, API, JSON, SOCKS5, Token 等）可保留英文原词，其余文本一律使用中文。
 `;
 export const CHINESE_ENFORCEMENT_PREFIX = '【系统要求：本轮交互所有思维推理(<thinking>)与任务执行分析必须全程100%使用中文撰写，严禁使用任何英文组织思路】\n\n';
-import { localizeEnglishThought, humanizeAntigravityError } from './antigravity-chinese-filter.js';
-export { localizeEnglishThought, humanizeAntigravityError };
 export function ensureChineseRules(workingDir) {
     try {
         const homeDir = process.env.AGY_HOME || process.env.HOME || '/tmp/agy-test/home';
@@ -298,15 +299,15 @@ function runAntigravityTurnOnce(params) {
                 }
                 catch (_) { }
             }
-            // Safety timer to kill process if it lingers in background
+            // 优雅宽限期：留出30秒充足时间让子进程自然完成后台I/O与清理，避免截断异步子任务
             cleanupBackgroundTimer = setTimeout(() => {
                 try {
                     if (antigravityProcess && !antigravityProcess.killed) {
-                        antigravityProcess.kill('SIGKILL');
+                        antigravityProcess.kill('SIGTERM');
                     }
                 }
                 catch (_) { }
-            }, 4000);
+            }, 30000);
             resolve({
                 exitCode: 0,
                 conversationId: turnConversationId,
