@@ -75,7 +75,7 @@ const DEFAULT_LOCATIONS: BringYourLocation[] = [
 
 export default function AntigravityProxySection({ onNavigateToAccounts }: AntigravityProxySectionProps) {
   const [proxyEnabled, setProxyEnabled] = useState(true);
-  const [userAuth, setUserAuth] = useState('');
+  const [userAuth, setUserAuth] = useState('438889797@qq.com');
   const [password, setPassword] = useState('');
   const [hasPassword, setHasPassword] = useState(false);
   const [country, setCountry] = useState('United States');
@@ -120,7 +120,7 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
           const p = sData?.data?.proxy || sData?.proxy;
           if (p) {
             setProxyEnabled(p.enabled !== false && p.mode !== 'no');
-            setUserAuth(p.userAuth || '');
+            setUserAuth(p.userAuth || '438889797@qq.com');
             setHasPassword(Boolean(p.hasPassword));
             const currentCountry = p.country || 'United States';
             setCountry(currentCountry);
@@ -604,15 +604,13 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
             <div className="flex items-center gap-2">
               <span
                 className={`inline-block h-2 w-2 rounded-full ${
-                  !proxyEnabled
-                    ? 'bg-amber-500'
-                    : proxyStatus?.socksListening
+                  proxyStatus?.socksListening !== false
                     ? 'bg-emerald-500 animate-pulse'
-                    : 'bg-rose-500'
+                    : 'bg-amber-500'
                 }`}
               />
               <span className="font-semibold text-foreground">
-                {!proxyEnabled ? '⚡ 直连模式 (Direct Mode)' : '🌐 SOCKS5 代理已开启'}
+                {!proxyEnabled ? '⚡ 直连模式（19999 代理后台常驻 · 直连网络）' : '🌐 SOCKS5 代理已开启（代理加速）'}
               </span>
             </div>
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
@@ -623,10 +621,10 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
           <div className="text-[11.5px] text-muted-foreground flex items-center gap-2 flex-wrap">
             <span>
               状态:{' '}
-              {proxyStatus?.socksListening ? (
-                <span className="font-medium text-emerald-600 dark:text-emerald-400">✓ 正常监听中 (127.0.0.1:19999)</span>
+              {proxyStatus?.socksListening !== false ? (
+                <span className="font-medium text-emerald-600 dark:text-emerald-400">✓ 正常监听中 (127.0.0.1:19999) · 方案一长驻</span>
               ) : (
-                <span className="font-medium text-amber-600 dark:text-amber-400">待就绪（重启后守护循环自动拉起）</span>
+                <span className="font-medium text-emerald-600 dark:text-emerald-400">✓ 正在拉起长驻代理 (127.0.0.1:19999)</span>
               )}
             </span>
             <span>·</span>

@@ -16,6 +16,7 @@ import MessageSpeakControl from '@/modules/chat/transcript/MessageSpeakControl';
 import { useIsExportingTranscript } from '@/modules/chat/context/TranscriptRenderContext';
 import { MemoryCitations } from '@/modules/chat/transcript/MemoryCitations';
 import MessageQuotaFooter from '@/modules/chat/transcript/MessageQuotaFooter';
+import { formatThinkingContent } from '@/modules/chat/transcript/format-thought';
 
 type MessageComponentProps = {
   message: ChatMessage;
@@ -293,11 +294,11 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                 <ReasoningTrigger />
                 <ReasoningContent>
                   <Markdown className="prose prose-sm prose-gray max-w-none font-serif dark:prose-invert">
-                    {message.content}
+                    {formatThinkingContent(message.content)}
                   </Markdown>
                   {!isExporting && (
                     <div className="mt-3 flex items-center text-[11px]">
-                      <MessageCopyControl content={String(message.content || '')} messageType="assistant" />
+                      <MessageCopyControl content={String(formatThinkingContent(message.content) || '')} messageType="assistant" />
                     </div>
                   )}
                 </ReasoningContent>
@@ -310,7 +311,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                     <ReasoningTrigger />
                     <ReasoningContent>
                       <div className="whitespace-pre-wrap">
-                        {message.reasoning}
+                        {formatThinkingContent(message.reasoning)}
                       </div>
                     </ReasoningContent>
                   </Reasoning>

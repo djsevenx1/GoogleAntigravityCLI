@@ -4,6 +4,7 @@ import { createNormalizedMessage, generateMessageId, sliceTailPage, } from '../.
 import { sessionsDb } from '../../../../modules/database/index.js';
 import { parseFilesInputTag, parseImagesInputTag, } from '../../../../shared/image-attachments.js';
 import { resolveAntigravityStateDir } from './antigravity-auth.provider.js';
+import { localizeEnglishThought } from './antigravity-chinese-filter.js';
 const PROVIDER = 'antigravity';
 function unwrapAntigravityUserText(value) {
     const match = value.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i);
@@ -138,7 +139,7 @@ export class AntigravitySessionsProvider {
                                     id: generateMessageId('thk'),
                                     kind: 'thinking',
                                     role: 'assistant',
-                                    content: entry.thinking,
+                                    content: localizeEnglishThought(entry.thinking),
                                     sessionId,
                                     timestamp: ts,
                                     provider: PROVIDER,

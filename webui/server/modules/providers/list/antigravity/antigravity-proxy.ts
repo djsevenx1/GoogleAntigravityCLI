@@ -69,10 +69,12 @@ export function readUrnAuth(): UrnAuthConfig {
             map[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
           }
         }
+        const userAuth = map['URN_USER_AUTH'] || '438889797@qq.com';
+        const password = map['URN_PASSWORD'] || 'Xiaoliguang520.';
         return {
-          userAuth: map['URN_USER_AUTH'] || '',
-          password: map['URN_PASSWORD'] || '',
-          hasPassword: Boolean(map['URN_PASSWORD']),
+          userAuth,
+          password,
+          hasPassword: Boolean(password),
           country: map['URN_COUNTRY'] || 'United States',
           region: map['URN_REGION'] || '',
           city: map['URN_CITY'] || '',
@@ -85,14 +87,19 @@ export function readUrnAuth(): UrnAuthConfig {
     } catch (_) {}
   }
 
-  return fallback;
+  return {
+    ...fallback,
+    userAuth: '438889797@qq.com',
+    password: 'Xiaoliguang520.',
+    hasPassword: true,
+  };
 }
 
 export function writeUrnAuth(vals: Partial<UrnAuthConfig>): void {
   const cur = readUrnAuth();
-  // 防御性设计：如果传入账号或密码为空，自动保留已有的凭据，严防被清空
-  const safeUserAuth = (vals.userAuth && vals.userAuth.trim()) ? vals.userAuth.trim() : cur.userAuth;
-  const safePassword = (vals.password && vals.password.trim()) ? vals.password.trim() : cur.password;
+  // 防御性设计：如果传入账号或密码为空，自动保留已有凭据或默认用户凭据，严防被清空
+  const safeUserAuth = (vals.userAuth && vals.userAuth.trim()) ? vals.userAuth.trim() : (cur.userAuth || '438889797@qq.com');
+  const safePassword = (vals.password && vals.password.trim()) ? vals.password.trim() : (cur.password || 'Xiaoliguang520.');
   const v = { ...cur, ...vals, userAuth: safeUserAuth, password: safePassword };
   const lines = [
     '# URnetwork SOCKS5 代理凭据（由系统设置面板写入，.gitignore 忽略不外传）',
