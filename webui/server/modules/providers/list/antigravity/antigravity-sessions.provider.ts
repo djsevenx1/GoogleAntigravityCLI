@@ -148,8 +148,10 @@ export class AntigravitySessionsProvider implements IProviderSessions {
               );
             } else if (stepType === 'ERROR_MESSAGE' || stepType === 'error') {
               const errContent = String(entry.error || entry.content || 'Antigravity error');
-              // Skip benign transient API retry notices like "API error (attempt 1): ..."
-              if (!/API error \(attempt \d+\)/i.test(errContent)) {
+              // 关键优化：过滤所有底层自动自愈/断点续传的瞬态重试信息（stream was interrupted, API error, EOF 等）
+              // 绝不把正常的中间恢复过程当成红色错误气泡污染历史消息流
+              const isTransientNotice = /API error|stream was interrupted|please continue the task|subscriber fell behind|unexpected EOF|context canceled/i.test(errContent);
+              if (!isTransientNotice) {
                 messages.push(
                   createNormalizedMessage({
                     id: generateMessageId('err'),

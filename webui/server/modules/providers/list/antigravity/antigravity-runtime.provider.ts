@@ -831,9 +831,9 @@ export async function spawnAntigravity(
     }
   };
 
-  const MAX_RETRIES = 3;
-  const EOF_EXTRA_RETRIES = 2;
-  const TOTAL_MAX_ATTEMPTS = MAX_RETRIES + EOF_EXTRA_RETRIES; // 5
+  const MAX_RETRIES = 5;
+  const EOF_EXTRA_RETRIES = 3;
+  const TOTAL_MAX_ATTEMPTS = MAX_RETRIES + EOF_EXTRA_RETRIES; // 8
 
   let lastError = '';
   let finalResult: TurnAttemptResult | null = null;
@@ -924,7 +924,7 @@ export async function spawnAntigravity(
 
         // 2. Proactive auth refresh
         const isAuthErr = /authentication failed|token expired|invalid_grant|unauthorized/i.test(errMsg);
-        if (isAuthErr && attempt < MAX_RETRIES) {
+        if (isAuthErr && attempt < TOTAL_MAX_ATTEMPTS) {
           console.warn(`[Antigravity Runtime] Auth error detected on attempt ${attempt}, refreshing access token...`);
           try {
             await antigravityAccountsService.refreshAccessToken();
@@ -933,7 +933,6 @@ export async function spawnAntigravity(
           continue;
         }
 
-        // 3. Stream Interrupted / Proxy EOF / Connection reset / Stream drop
         // 3. Stream Interrupted / Proxy EOF / Connection reset / Stream drop / Subscriber stalled / Google 403 WAF
         const isGoogleWaf403 = /code 403|Forbidden|robot\.png/i.test(errMsg);
         if (isGoogleWaf403 && attempt < TOTAL_MAX_ATTEMPTS) {
@@ -941,7 +940,7 @@ export async function spawnAntigravity(
           try {
             exec('pkill -f "urnetwork/urnetwork-socks" 2>/dev/null || true');
           } catch (_) {}
-          await new Promise((r) => setTimeout(r, 6000));
+          await new Promise((r) => setTimeout(r, 5000));
           if (capturedSessionId) {
             currentPrompt = '继续';
           }
@@ -959,12 +958,12 @@ export async function spawnAntigravity(
             }
           }
           if (isProxy) {
-            if (attempt >= MAX_RETRIES) {
+            if (attempt >= 2) {
               console.warn(`[Antigravity Runtime] EOF/Interrupted retry #${attempt}: restarting urnetwork-socks to rotate nodes...`);
               try {
                 exec('pkill -f "urnetwork/urnetwork-socks" 2>/dev/null || true');
               } catch (_) {}
-              await new Promise((r) => setTimeout(r, 6000));
+              await new Promise((r) => setTimeout(r, 4000));
             } else {
               console.warn(`[Antigravity Runtime] EOF/Interrupted retry #${attempt}: waiting 2s for recovery...`);
               await new Promise((r) => setTimeout(r, 2000));
@@ -976,11 +975,18 @@ export async function spawnAntigravity(
           continue;
         }
 
-        // 4. Transient network / TLS / DNS / Handshake / Profile picture errors
+        // 4. Transient network / TLS / DNS / Handshake / Eligibility check errors
         const isTransient = /retryable error|network issue|stream ended|unexpected EOF|context canceled|connection reset|Eligibility check failed|profile picture|i\/o timeout|timeout|dial tcp|connection refused|network is unreachable/i.test(errMsg);
-        if (isTransient && attempt < MAX_RETRIES) {
-          console.warn(`[Antigravity Runtime] Transient network error (attempt ${attempt}/${MAX_RETRIES}): ${errMsg.slice(0, 100)}, retrying in 2s...`);
-          await new Promise((r) => setTimeout(r, 2000));
+        if (isTransient && attempt < TOTAL_MAX_ATTEMPTS) {
+          console.warn(`[Antigravity Runtime] Transient network error (attempt ${attempt}/${TOTAL_MAX_ATTEMPTS}): ${errMsg.slice(0, 100)}, retrying...`);
+          if (getProxyToggle() === 'yes' && attempt >= 2) {
+            try {
+              exec('pkill -f "urnetwork/urnetwork-socks" 2>/dev/null || true');
+            } catch (_) {}
+            await new Promise((r) => setTimeout(r, 4000));
+          } else {
+            await new Promise((r) => setTimeout(r, 2000));
+          }
           continue;
         }
 
