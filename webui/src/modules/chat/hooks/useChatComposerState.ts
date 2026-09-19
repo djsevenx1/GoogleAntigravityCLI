@@ -272,6 +272,8 @@ export function useChatComposerState({
   // while `queuedDraft` still holds the old session's draft; the persistence
   // effect must not write across that gap.
   const queuedDraftSessionRef = useRef<string | null>(sessionKey);
+  const prevLoadingRef = useRef<boolean>(isLoading);
+  const isDispatchingQueuedRef = useRef<boolean>(false);
 
   const handleBuiltInCommand = useCallback(
     (result: CommandExecutionResult) => {
@@ -908,8 +910,52 @@ export function useChatComposerState({
     handleSubmitRef.current = handleSubmit;
   }, [handleSubmit]);
 
-  // The VPS dispatcher owns sending. While the card is visible, periodically
-  // reconcile only its removal so the UI notices when the server claims it.
+  // 当上一轮对话结束或当前处于空闲状态时，自动触发排队消息的主动派发
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = isLoading;
+
+    if (
+      !sessionKey
+      || !queuedDraft
+      || queuedDraftSessionRef.current !== sessionKey
+      || isDispatchingQueuedRef.current
+    ) {
+      return;
+    }
+
+    // 核心触发条件：
+    // 1. 上一轮对话刚完成（wasLoading === true 且 isLoading === false）
+    // 2. 当前处于空闲状态且有待发送的排队草稿（!isLoading）
+    if (!isLoading) {
+      isDispatchingQueuedRef.current = true;
+      const draftToSend = { ...queuedDraft };
+
+      // 立即清除排队草稿和卡片，避免界面卡死或重复入队
+      setQueuedDraft(null);
+      queuedDraftSessionRef.current = sessionKey;
+      clearQueuedMessage(sessionKey);
+
+      // 刚结束时等待150ms确保上个WebSocket turn彻底释放；初次加载等待500ms确保连接就绪
+      const delayMs = wasLoading ? 150 : 500;
+      const timer = setTimeout(() => {
+        try {
+          handleSubmitRef.current?.(createFakeSubmitEvent(), draftToSend);
+        } catch (dispatchError) {
+          console.error('[ChatComposer] Failed to auto-dispatch queued message:', dispatchError);
+        } finally {
+          isDispatchingQueuedRef.current = false;
+        }
+      }, delayMs);
+
+      return () => {
+        clearTimeout(timer);
+        isDispatchingQueuedRef.current = false;
+      };
+    }
+  }, [isLoading, sessionKey, queuedDraft]);
+
+  // 保底同步：多端或多标签页操作时定期校准排队状态
   useEffect(() => {
     if (!sessionKey || !queuedDraft) {
       return;
@@ -933,16 +979,25 @@ export function useChatComposerState({
     if (!queuedDraft) {
       return;
     }
+    const current = queuedDraft;
     setQueuedDraft(null);
-    setInput(queuedDraft.content);
-    inputValueRef.current = queuedDraft.content;
-    setAttachedFiles(queuedDraft.attachments);
+    if (sessionKey) {
+      queuedDraftSessionRef.current = sessionKey;
+      clearQueuedMessage(sessionKey);
+    }
+    setInput(current.content);
+    inputValueRef.current = current.content;
+    setAttachedFiles(current.attachments);
     textareaRef.current?.focus();
-  }, [queuedDraft]);
+  }, [queuedDraft, sessionKey]);
 
   const deleteQueuedDraft = useCallback(() => {
     setQueuedDraft(null);
-  }, []);
+    if (sessionKey) {
+      queuedDraftSessionRef.current = sessionKey;
+      clearQueuedMessage(sessionKey);
+    }
+  }, [sessionKey]);
 
   // A voice transcript either fills the input (to edit before sending) or, when the
   // user tapped "stop and send", is submitted straight away. Mirror the value into
