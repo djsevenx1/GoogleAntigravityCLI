@@ -438,10 +438,22 @@ function runAntigravityTurnOnce(params) {
                             provider: 'antigravity',
                         }));
                     }
-                    if (toolInfo.output || update.output || toolInfo.error || update.error || update.status === 'ERROR') {
+                    if (toolInfo.output || update.output || toolInfo.error || update.error || update.status === 'ERROR' || update.media || toolInfo.media) {
                         const isError = Boolean(toolInfo.error || update.error || update.status === 'ERROR');
                         const rawContent = toolInfo.error || update.error || toolInfo.output || update.output || '';
-                        const outStr = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+                        let outStr = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+                        // 实时提取底层返回的媒体图片并在聊天框展示
+                        const rawMedia = update.media || toolInfo.media || (update.result && update.result.media);
+                        if (Array.isArray(rawMedia) && rawMedia.length > 0) {
+                            for (const m of rawMedia) {
+                                if (m?.uri && typeof m.uri === 'string') {
+                                    const isImg = !m.mime_type || m.mime_type.startsWith('image/');
+                                    if (isImg) {
+                                        outStr += `\n\n![生成的图片](${m.uri})\n`;
+                                    }
+                                }
+                            }
+                        }
                         ws.send(createNormalizedMessage({
                             kind: 'tool_result',
                             toolName: String(toolInfo.name),

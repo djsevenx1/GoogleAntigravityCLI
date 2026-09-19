@@ -303,14 +303,119 @@ function MarkdownBodyRenderer({ children, breaks = false }: Omit<MarkdownProps, 
           </a>
         );
       },
+      img: ({ src, alt, title }: { src?: string; alt?: string; title?: string }) => {
+        if (!src) return null;
+
+        let resolvedSrc = src;
+        // 支持各类协议与服务器本地文件路径转换
+        if (src.startsWith('file://') || (src.startsWith('/') && !src.startsWith('/api/'))) {
+          const cleanPath = src.replace(/^file:\/\//, '');
+          resolvedSrc = `/api/media/file?path=${encodeURIComponent(cleanPath)}`;
+        }
+
+        return (
+          <span className="my-3 block max-w-full overflow-hidden rounded-xl border border-zinc-200/80 bg-zinc-50/50 shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/50">
+            <a
+              href={resolvedSrc}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group relative block overflow-hidden"
+              title={title || alt || '点击在新窗口查看高清原图'}
+            >
+              <img
+                src={resolvedSrc}
+                alt={alt || '生成的图片'}
+                className="max-h-[560px] w-auto max-w-full rounded-lg object-contain transition-transform duration-300 group-hover:scale-[1.01]"
+                loading="lazy"
+              />
+              <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/70 px-2.5 py-1 text-xs text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
+                <span>🔍</span> 点击查看高清原图
+              </span>
+            </a>
+            {alt && (
+              <span className="block border-t border-zinc-100 bg-white/70 px-3 py-1.5 text-center text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400">
+                🖼️ {alt}
+              </span>
+            )}
+          </span>
+        );
+      },
     }),
     [openFileInEditor],
   );
 
+  // 解析并提取文本中的 <agent-embed> 标签（Generative UI / 内嵌画卷卡片）
+  const segments = useMemo(() => {
+    if (!content || !content.includes('<agent-embed')) {
+      return [{ type: 'markdown' as const, value: content }];
+    }
+
+    const result: Array<
+      | { type: 'markdown'; value: string }
+      | { type: 'embed'; src: string; height: string }
+    > = [];
+
+    const regex = /<agent-embed\s+src=["']([^"']+)["'](?:\s+height=["']([^"']+)["'])?[^>]*>(?:<\/agent-embed>)?/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(content)) !== null) {
+      if (match.index > lastIndex) {
+        result.push({
+          type: 'markdown',
+          value: content.slice(lastIndex, match.index),
+        });
+      }
+      const rawSrc = match[1] || '';
+      const cleanSrc = rawSrc.replace(/^file:\/\//, '');
+      result.push({
+        type: 'embed',
+        src: `/api/media/embed?path=${encodeURIComponent(cleanSrc)}`,
+        height: match[2] || '520px',
+      });
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < content.length) {
+      result.push({
+        type: 'markdown',
+        value: content.slice(lastIndex),
+      });
+    }
+
+    return result;
+  }, [content]);
+
+  if (segments.length === 1 && segments[0].type === 'markdown') {
+    return (
+      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components as any}>
+        {segments[0].value}
+      </ReactMarkdown>
+    );
+  }
+
   return (
-    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components as any}>
-      {content}
-    </ReactMarkdown>
+    <div className="space-y-2">
+      {segments.map((seg, idx) => {
+        if (seg.type === 'embed') {
+          return (
+            <div key={idx} className="my-3 overflow-hidden rounded-2xl border border-zinc-200 shadow-md dark:border-zinc-800">
+              <iframe
+                src={seg.src}
+                style={{ width: '100%', height: seg.height, border: 'none' }}
+                className="w-full bg-transparent"
+                sandbox="allow-scripts allow-same-origin allow-downloads"
+              />
+            </div>
+          );
+        }
+        return (
+          <ReactMarkdown key={idx} remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components as any}>
+            {seg.value}
+          </ReactMarkdown>
+        );
+      })}
+    </div>
   );
 }
 

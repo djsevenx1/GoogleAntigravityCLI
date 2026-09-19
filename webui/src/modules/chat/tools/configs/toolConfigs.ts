@@ -254,6 +254,32 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
     },
   },
 
+  generate_image: {
+    input: {
+      type: 'one-line',
+      label: '生成图片',
+      icon: '🖼️',
+      getValue: (input) => {
+        const name = input.ImageName || input.name || '图片';
+        const prompt = input.Prompt || input.prompt || '';
+        const act = input.toolAction ? translateActionPhrase(input.toolAction) : '';
+        return act ? `${act} (${name})` : (prompt ? `生成图片: ${name} - ${prompt.slice(0, 30)}...` : `生成图片: ${name}`);
+      },
+      getSecondary: (input) => input.toolSummary || (input.Prompt ? input.Prompt.slice(0, 50) : undefined),
+      colorScheme: {
+        primary: 'text-purple-600 dark:text-purple-400 font-medium',
+        border: 'border-purple-400 dark:border-purple-500',
+        icon: 'text-purple-500 dark:text-purple-400',
+      },
+    },
+    result: {
+      contentType: 'markdown',
+      getContentProps: (result) => ({
+        content: String(result?.content || ''),
+      }),
+    },
+  },
+
   run_command: {
     input: {
       type: 'one-line',

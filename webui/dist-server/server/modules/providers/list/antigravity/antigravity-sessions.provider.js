@@ -177,9 +177,20 @@ export class AntigravitySessionsProvider {
                                 }));
                             }
                         }
-                        else if (entry.type === 'GENERIC' && (entry.content || entry.error)) {
+                        else if (entry.type === 'GENERIC' && (entry.content || entry.error || entry.media)) {
                             const isError = entry.status === 'ERROR' || Boolean(entry.error);
-                            const toolContent = String(entry.error || entry.content || '');
+                            let toolContent = String(entry.error || entry.content || '');
+                            // 关键增强：提取底层 media 数组中的图片并在聊天框展示
+                            if (Array.isArray(entry.media) && entry.media.length > 0) {
+                                for (const m of entry.media) {
+                                    if (m?.uri && typeof m.uri === 'string') {
+                                        const isImg = !m.mime_type || m.mime_type.startsWith('image/');
+                                        if (isImg) {
+                                            toolContent += `\n\n![生成的图片](${m.uri})\n`;
+                                        }
+                                    }
+                                }
+                            }
                             const matchedTool = pendingToolCalls.shift() || lastToolCall;
                             const toolId = matchedTool ? matchedTool.id : generateMessageId('call');
                             const toolName = matchedTool ? matchedTool.name : undefined;
