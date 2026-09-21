@@ -23,37 +23,37 @@
 
 @layer base {
   :root {
-    --background: 210 20% 98.5%;
-    --foreground: 222 47% 11%;
+    --background: 38 16% 96%;
+    --foreground: 220 15% 18%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 220 15% 18%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 220 15% 18%;
     --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 20% 95%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 20% 95%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 20% 95%;
-    --accent-foreground: 222 47% 11%;
+    --secondary: 38 14% 91%;
+    --secondary-foreground: 220 15% 18%;
+    --muted: 38 14% 91%;
+    --muted-foreground: 220 8% 46%;
+    --accent: 38 14% 91%;
+    --accent-foreground: 220 15% 18%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214 20% 90%;
-    --input: 214 20% 90%;
+    --border: 38 12% 87%;
+    --input: 38 12% 87%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
 
-    /* Nav design tokens - 高级清透微毛玻璃 */
-    --nav-glass-bg: 0 0% 100% / 0.82;
+    /* Nav design tokens - 温润护眼通透微毛玻璃 */
+    --nav-glass-bg: 38 16% 96% / 0.85;
     --nav-glass-blur: 20px;
     --nav-glass-saturate: 1.8;
     --nav-tab-glow: 221.2 83.2% 53.3% / 0.14;
     --nav-tab-ring: 221.2 83.2% 53.3% / 0.08;
     --nav-float-shadow: 220 20% 15% / 0.04;
-    --nav-float-ring: 214 20% 90% / 0.6;
-    --nav-divider-color: 214 20% 90% / 0.6;
-    --nav-input-bg: 210 20% 95% / 0.6;
+    --nav-float-ring: 38 12% 87% / 0.6;
+    --nav-divider-color: 38 12% 87% / 0.6;
+    --nav-input-bg: 38 14% 91% / 0.7;
     --nav-input-focus-ring: 221.2 83.2% 53.3% / 0.22;
 
     /* Safe area CSS variables */
