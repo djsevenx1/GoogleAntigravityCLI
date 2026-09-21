@@ -332,11 +332,55 @@ export function useChatComposerState({
           onShowSettings?.();
           break;
 
+        case 'clear':
+          addMessage({
+            type: 'assistant',
+            content: '🧹 **屏幕已清理**。如需开始全新独立上下文，请点击左上角开启新会话。',
+            timestamp: Date.now(),
+          });
+          break;
+
+        case 'compact':
+          if (data?.message) {
+            addMessage({
+              type: 'assistant',
+              content: `📦 **会话压缩**: ${data.message}`,
+              timestamp: Date.now(),
+            });
+          }
+          break;
+
+        case 'guide':
+        case 'info': {
+          const guideContent = data?.content || data?.message;
+          if (guideContent) {
+            addMessage({
+              type: 'assistant',
+              content: guideContent,
+              timestamp: Date.now(),
+            });
+          }
+          const commandName = (result as Record<string, any>).command;
+          const insertText = data?.insertText || (typeof commandName === 'string' && commandName ? `${commandName} ` : '');
+          if (insertText) {
+            setInput(insertText);
+            inputValueRef.current = insertText;
+            setTimeout(() => {
+              if (textareaRef.current) {
+                textareaRef.current.focus();
+                const len = insertText.length;
+                textareaRef.current.setSelectionRange(len, len);
+              }
+            }, 60);
+          }
+          break;
+        }
+
         default:
           console.warn('Unknown built-in command action:', action);
       }
     },
-    [onFileOpen, onShowSettings, addMessage],
+    [onFileOpen, onShowSettings, addMessage, setInput],
   );
 
   const closeCommandModal = useCallback(() => {
@@ -417,8 +461,10 @@ export function useChatComposerState({
         if (result.type === 'builtin') {
           handleBuiltInCommand(result);
           if (!options?.preserveInput) {
-            setInput('');
-            inputValueRef.current = '';
+            if (result.action !== 'guide' && result.action !== 'info') {
+              setInput('');
+              inputValueRef.current = '';
+            }
           }
         } else if (result.type === 'custom') {
           await handleCustomCommand(result);
@@ -730,7 +776,18 @@ export function useChatComposerState({
                 metadata: { type: 'builtin' },
               } as SlashCommand)
             : undefined);
-        if (matchedCommand && matchedCommand.type !== 'skill') {
+
+        const hasArguments = firstSpace > 0 && commandInput.slice(firstSpace).trim().length > 0;
+        const isWorkflowCommand =
+          matchedCommand?.type === 'skill' ||
+          Boolean(matchedCommand?.metadata?.insertable) ||
+          ['/boost', '/plan', '/goal', '/review', '/browser', '/grill-me', '/schedule', '/teamwork-preview', '/learn'].includes(commandName.toLowerCase());
+
+        // When a user provides arguments to an AI workflow command (e.g. "/boost 需求描述..."),
+        // it must be dispatched as an actual user prompt to Antigravity, NOT intercepted as a static client command.
+        const shouldPassThroughToAgent = isWorkflowCommand && hasArguments;
+
+        if (matchedCommand && !shouldPassThroughToAgent && matchedCommand.type !== 'skill') {
           executeCommand(matchedCommand, isHelpAlias ? '/help' : commandInput);
           recordSentMessage(currentInput);
           setInput('');

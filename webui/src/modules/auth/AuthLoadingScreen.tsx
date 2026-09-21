@@ -9,8 +9,8 @@ export default function AuthLoadingScreen() {
   const { t } = useTranslation('auth');
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-40 left-1/2 h-[36rem] w-[36rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-36 left-1/2 h-[42rem] w-[56rem] -translate-x-1/2 rounded-full bg-primary/5 blur-3xl" />
       </div>
 
       <div className="relative text-center" role="status" aria-live="polite">

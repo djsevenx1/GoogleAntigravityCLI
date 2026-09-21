@@ -331,8 +331,20 @@ function runAntigravityTurnOnce(params: TurnAttemptParams): Promise<TurnAttemptR
     baseArgs.push(...permArgs);
 
     let prompt = command || '';
-    if (prompt && !prompt.startsWith(CHINESE_ENFORCEMENT_PREFIX)) {
-      prompt = CHINESE_ENFORCEMENT_PREFIX + prompt;
+    if (prompt && !prompt.includes(CHINESE_ENFORCEMENT_PREFIX)) {
+      if (prompt.startsWith('/')) {
+        // 如果输入以斜杠命令开头（如 /boost、/plan 等），保留第一行命令头以便 CLI 正确识别斜杠扩展
+        const firstLineEnd = prompt.indexOf('\n');
+        if (firstLineEnd !== -1) {
+          const firstLine = prompt.slice(0, firstLineEnd);
+          const rest = prompt.slice(firstLineEnd + 1);
+          prompt = `${firstLine}\n\n${CHINESE_ENFORCEMENT_PREFIX}${rest}`;
+        } else {
+          prompt = `${prompt}\n\n${CHINESE_ENFORCEMENT_PREFIX}`;
+        }
+      } else {
+        prompt = CHINESE_ENFORCEMENT_PREFIX + prompt;
+      }
     }
     const hasAttachments =
       normalizeAttachmentDescriptors(images).length > 0 ||

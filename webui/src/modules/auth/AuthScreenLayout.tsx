@@ -25,8 +25,8 @@ export default function AuthScreenLayout({
       {/* Ambient, on-brand backdrop that gives the screen depth without
           competing with the card content. Fixed so it stays put while the
           form scrolls on short viewports. */}
-      <div aria-hidden className="pointer-events-none fixed inset-0">
-        <div className="absolute -top-40 left-1/2 h-[36rem] w-[36rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+      <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -top-36 left-1/2 h-[42rem] w-[56rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute -bottom-32 -left-24 h-[26rem] w-[26rem] rounded-full bg-primary/5 blur-3xl" />
         <div className="absolute inset-0 bg-[radial-gradient(hsl(var(--foreground)/0.04)_1px,transparent_1px)] opacity-60 [background-size:22px_22px]" />
       </div>

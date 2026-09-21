@@ -218,6 +218,54 @@ export function createCommandsRouter(dependencies) {
             namespace: "builtin",
             metadata: { type: "builtin" },
         },
+        {
+            name: "/clear",
+            description: "清空当前屏幕对话记录",
+            namespace: "builtin",
+            metadata: { type: "builtin" },
+        },
+        {
+            name: "/compact",
+            description: "压缩并优化当前会话的上下文长度",
+            namespace: "builtin",
+            metadata: { type: "builtin" },
+        },
+        {
+            name: "/init",
+            description: "在当前工程中初始化并创建项目级记忆规范 (AGENTS.md)",
+            namespace: "builtin",
+            metadata: { type: "builtin" },
+        },
+        {
+            name: "/agents",
+            description: "查看系统可用的智能体角色列表与专业分工",
+            namespace: "builtin",
+            metadata: { type: "builtin" },
+        },
+        {
+            name: "/skills",
+            description: "查看当前系统已加载的扩展能力与技能插件",
+            namespace: "builtin",
+            metadata: { type: "builtin" },
+        },
+        {
+            name: "/effort",
+            description: "查看与设置当前 AI 模型的推理思考深度 (high|medium|low)",
+            namespace: "builtin",
+            metadata: { type: "builtin" },
+        },
+        {
+            name: "/usage",
+            description: "查看当前账号的 Token 配额与调用额度",
+            namespace: "builtin",
+            metadata: { type: "builtin" },
+        },
+        {
+            name: "/changelog",
+            description: "查看 Google Antigravity 平台版本更新记录与新特性",
+            namespace: "builtin",
+            metadata: { type: "builtin" },
+        },
     ];
     /**
      * Built-in command handlers
@@ -245,6 +293,7 @@ ${cmd.description}
 - \`/boost <需求>\`: 启动多智能体深度推演与交叉验证，攻坚复杂架构与隐蔽 Bug。
 - \`/plan <任务>\`: 针对复杂任务生成结构化规划与审查自检清单。
 - \`/review\`: 对当前工作区所有改动进行安全漏洞与代码规范自动审查。
+- \`/goal <目标>\`: 无人值守长线攻坚直到达成最终目标。
 `;
             return {
                 type: "builtin",
@@ -264,7 +313,8 @@ ${cmd.description}
             type: "builtin",
             action: "guide",
             data: {
-                content: "🚀 **反重力 Boost 模式**: 请在输入框输入 `/boost <你的复杂任务或架构难题>`，系统将自动分配多智能体并行调研与独立交叉验证。",
+                content: "🚀 **反重力 Boost 模式已就绪**\n\n- **核心特性**：注重极致思维深度、多智能体深度推演与交叉验证，攻坚复杂架构与隐蔽 Bug。\n- **使用方法**：直接在下方输入框中补充您的具体需求并发送，例如：\n  `/boost 底部状态栏去掉，然后直播频道获取显示？，播放器ui改的和短剧那样`",
+                insertText: "/boost ",
                 format: "markdown",
             },
         }),
@@ -272,7 +322,8 @@ ${cmd.description}
             type: "builtin",
             action: "guide",
             data: {
-                content: "📋 **任务规划模式**: 请在输入框输入 `/plan <待规划任务>`，系统将在实施前先输出完整的步骤分解与确认方案。",
+                content: "📋 **任务规划模式已就绪**\n\n- **核心特性**：实施代码修改前，先输出完整的步骤分解、架构设计与确认方案。\n- **使用方法**：直接在输入框中输入 `/plan <待规划任务>` 并发送。",
+                insertText: "/plan ",
                 format: "markdown",
             },
         }),
@@ -280,7 +331,8 @@ ${cmd.description}
             type: "builtin",
             action: "guide",
             data: {
-                content: "🔍 **自动化审查模式**: 请在输入框输入 `/review` 或 `/review <文件路径>`，系统将对变更代码进行安全漏洞、边界隐患与 Clean Code 审查自检。",
+                content: "🔍 **自动化审查模式已就绪**\n\n- **核心特性**：对当前工作区的所有变更进行安全漏洞、边界隐患与 Clean Code 审查自检。\n- **使用方法**：输入 `/review` 审查全部改动，或输入 `/review <文件路径>` 审查指定文件。",
+                insertText: "/review ",
                 format: "markdown",
             },
         }),
@@ -288,7 +340,8 @@ ${cmd.description}
             type: "builtin",
             action: "guide",
             data: {
-                content: "🎯 **目标推进模式**: 请在输入框输入 `/goal <长线目标>`，系统将不间断自主推进，直至目标达成。",
+                content: "🎯 **目标推进模式已就绪**\n\n- **核心特性**：自主循环排查、深度验证、无人值守持续长跑，直到最终目标达成才停止。\n- **使用方法**：在输入框输入 `/goal <长线目标任务>` 并发送。",
+                insertText: "/goal ",
                 format: "markdown",
             },
         }),
@@ -296,7 +349,8 @@ ${cmd.description}
             type: "builtin",
             action: "guide",
             data: {
-                content: "⏰ **定时调度模式**: 请在输入框输入 `/schedule <任务内容与时间>`，支持单次定时（如 10 分钟后提醒）或周期 Cron 巡检。",
+                content: "⏰ **定时调度模式已就绪**\n\n- **核心特性**：设置单次延时提醒或周期 Cron 巡检任务。\n- **使用方法**：在输入框输入 `/schedule <任务内容与时间要求>` 并发送。",
+                insertText: "/schedule ",
                 format: "markdown",
             },
         }),
@@ -304,7 +358,8 @@ ${cmd.description}
             type: "builtin",
             action: "guide",
             data: {
-                content: "👥 **多智能体团队协作**: 请在输入框输入 `/teamwork-preview <复杂工程项目>`，系统将自动分配多个专业子 Agent 协同推进。",
+                content: "👥 **多智能体团队协作已就绪**\n\n- **核心特性**：大型工程多 Agent 自动分工协同推进，并行调查与编码自愈。\n- **使用方法**：在输入框输入 `/teamwork-preview <复杂工程项目需求>` 并发送。",
+                insertText: "/teamwork-preview ",
                 format: "markdown",
             },
         }),
@@ -312,7 +367,26 @@ ${cmd.description}
             type: "builtin",
             action: "guide",
             data: {
-                content: "🧠 **经验沉淀自学习**: 请在输入框输入 `/learn <需要沉淀的规范或配置>`，系统将自动固化至项目的规则知识库中。",
+                content: "🧠 **经验沉淀自学习模式已就绪**\n\n- **核心特性**：将踩坑经验、代码规范或特定配置固化至项目知识库中。\n- **使用方法**：在输入框输入 `/learn <需要沉淀的规范或纠正>` 并发送。",
+                insertText: "/learn ",
+                format: "markdown",
+            },
+        }),
+        "/browser": async (args) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: "🌐 **浏览器交互模式已就绪**\n\n- **核心特性**：启动网页检索与阅读工具，进行网页抓取与交互调研。\n- **使用方法**：在输入框输入 `/browser <网址或网页调研需求>` 并发送。",
+                insertText: "/browser ",
+                format: "markdown",
+            },
+        }),
+        "/grill-me": async (args) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: "🎯 **方案对齐深度访谈已就绪**\n\n- **核心特性**：方案对齐深度访谈，澄清设计决策与架构权衡。\n- **使用方法**：在输入框输入 `/grill-me <设计方案或需求>` 并发送。",
+                insertText: "/grill-me ",
                 format: "markdown",
             },
         }),
@@ -465,6 +539,91 @@ ${cmd.description}
                 },
             };
         },
+        "/clear": async () => ({
+            type: "builtin",
+            action: "clear",
+            data: {
+                message: "已清空屏幕消息",
+            },
+        }),
+        "/compact": async (args, context) => ({
+            type: "builtin",
+            action: "compact",
+            data: {
+                message: "已请求后台压缩与总结会话上下文",
+            },
+        }),
+        "/init": async (args, context) => {
+            const projectPath = context?.projectPath;
+            if (!projectPath) {
+                return {
+                    type: "builtin",
+                    action: "guide",
+                    data: {
+                        content: "⚠️ 请先打开或选择一个项目工程，再执行 `/init` 初始化项目记忆规则。",
+                        format: "markdown",
+                    },
+                };
+            }
+            const agentsFile = path.join(projectPath, "AGENTS.md");
+            let existed = false;
+            try {
+                await fs.access(agentsFile);
+                existed = true;
+            }
+            catch (_) { }
+            if (!existed) {
+                const template = `# 项目记忆与开发规范 (AGENTS.md)\n\n## 1. 工程概述\n- 本项目由 Antigravity 进行辅助开发。\n\n## 2. 编码与自检准则\n- 严禁假实现与占位符代码。\n- 修复问题需深挖根本原因，修改后需执行语法检查与自动化自检。\n`;
+                try {
+                    await fs.writeFile(agentsFile, template, "utf8");
+                }
+                catch (err) {
+                    console.error("Failed to create AGENTS.md:", err);
+                }
+            }
+            return {
+                type: "builtin",
+                action: "memory",
+                data: {
+                    path: agentsFile,
+                    exists: true,
+                    message: existed ? "项目规则文件已存在，已为您打开。" : "已成功为您初始化创建 AGENTS.md 规范文件！",
+                },
+            };
+        },
+        "/agents": async () => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: `# 🤖 Antigravity 智能体体系\n\n- **self**: 默认主代理，具备全套工具权限、读写执行与深度思考能力。\n- **research**: 专业只读调研代理，支持代码检索、网络搜索与文档阅读。\n- **subagent**: 支持通过 \`invoke_subagent\` 动态孵化多智能体协同攻坚。\n\n**提示**: 可在工程中通过自定义角色配置专属子代理分工。`,
+                format: "markdown",
+            },
+        }),
+        "/skills": async () => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: `# 🧩 当前已装载的 Skills 技能\n\n- **antigravity-guide**: Antigravity 平台核心指南、CLI 规范与站点地图\n- **agy-customizations**: 自定义扩展、规则系统与侧车机制全景指南\n\n**提示**: 可在 \`~/.gemini/antigravity-cli/skills\` 或工程 \`.gemini/skills\` 下扩展专属技能。`,
+                format: "markdown",
+            },
+        }),
+        "/effort": async (args, context) => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: `⚡ **思维推理深度 (Reasoning Effort)**\n\n当前针对 Gemini 核心模型默认固定注入 **high (高强度深度思考)**。\n支持级别：\n- \`high\`: 极致思维链，适合复杂架构与疑难 Bug（默认推荐）\n- \`medium\`: 均衡速度与思考深度\n- \`low\`: 极速轻量响应`,
+                format: "markdown",
+            },
+        }),
+        "/usage": (args, context) => builtInHandlers["/cost"](args, context),
+        "/changelog": async () => ({
+            type: "builtin",
+            action: "guide",
+            data: {
+                content: `📜 **Google Antigravity 更新日志**\n\n- **WebUI 3100 优化**: 全面打通 \`/boost\`、\`/plan\`、\`/goal\` 等斜杠工作流命令，支持无缝带参发送与智能提示。\n- **中文思维规范**: 100% 强制中文深度推理与自检机制持久生效。\n- **长线任务支持**: 支持 24 小时超长无人值守挂机与断点自愈。`,
+                format: "markdown",
+            },
+        }),
     };
     /**
      * POST /api/commands/list
@@ -557,18 +716,21 @@ ${cmd.description}
             // Security: validate commandPath is within allowed directories
             {
                 const resolvedPath = path.resolve(commandPath);
-                const userBase = path.resolve(path.join(os.homedir(), ".claude", "commands"));
-                const projectBase = context?.projectPath
-                    ? path.resolve(path.join(context.projectPath, ".claude", "commands"))
-                    : null;
+                const allowedBases = [
+                    path.resolve(path.join(os.homedir(), ".gemini", "commands")),
+                    path.resolve(path.join(os.homedir(), ".claude", "commands")),
+                ];
+                if (context?.projectPath) {
+                    allowedBases.push(path.resolve(path.join(context.projectPath, ".agents", "commands")), path.resolve(path.join(context.projectPath, ".gemini", "commands")), path.resolve(path.join(context.projectPath, ".claude", "commands")));
+                }
                 const isUnder = (base) => {
                     const rel = path.relative(base, resolvedPath);
                     return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
                 };
-                if (!(isUnder(userBase) || (projectBase && isUnder(projectBase)))) {
+                if (!allowedBases.some((base) => isUnder(base))) {
                     return res.status(403).json({
                         error: "Access denied",
-                        message: "Command must be in .claude/commands directory",
+                        message: "Command must be in allowed commands directory (.agents/commands, .gemini/commands, or .claude/commands)",
                     });
                 }
             }

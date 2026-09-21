@@ -107,14 +107,15 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
 
   const handleAction = useCallback(() => {
     if (displayConfig?.action === 'open-file' && onFileOpen) {
+      const record = (parsedData || {}) as Record<string, any>;
       let targetFile =
         displayConfig.getFilePath?.(parsedData) ||
-        parsedData?.AbsolutePath ||
-        parsedData?.TargetFile ||
-        parsedData?.target_file ||
-        parsedData?.filePath ||
-        parsedData?.file_path ||
-        parsedData?.path ||
+        record.AbsolutePath ||
+        record.TargetFile ||
+        record.target_file ||
+        record.filePath ||
+        record.file_path ||
+        record.path ||
         '';
 
       if (!targetFile && displayConfig.getValue) {

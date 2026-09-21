@@ -152,7 +152,7 @@ export default function FileTree({ selectedProject, onFileOpen }: FileTreeProps)
   return (
     <div
       ref={treeRef}
-      className="relative flex h-full flex-col bg-background"
+      className="relative flex h-full flex-col bg-transparent"
       onDragEnter={upload.handleDragEnter}
       onDragOver={upload.handleDragOver}
       onDragLeave={upload.handleDragLeave}

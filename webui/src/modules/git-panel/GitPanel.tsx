@@ -117,7 +117,7 @@ export default function GitPanel({
   }
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className="flex h-full flex-col bg-transparent">
       {!isMissingRepository && (
         <GitPanelHeader
           isMobile={isMobile}
