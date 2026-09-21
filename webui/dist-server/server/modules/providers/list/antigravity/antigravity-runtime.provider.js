@@ -173,10 +173,12 @@ export function ensureChineseRules(workingDir) {
 }
 class QuotaExhaustedError extends Error {
     resetTimeMsg;
-    constructor(message, resetTimeMsg) {
+    rawText;
+    constructor(message, resetTimeMsg, rawText) {
         super(message);
         this.name = 'QuotaExhaustedError';
         this.resetTimeMsg = resetTimeMsg;
+        this.rawText = rawText;
     }
 }
 const CHINESE_RULES_CONTENT = `# Antigravity 全局语言与思维规范 (Global Language & Reasoning Guidelines)
@@ -246,7 +248,9 @@ function runAntigravityTurnOnce(params) {
             // 单回合最大执行超时放宽至 24 小时，彻底支持过夜挂机、深度自动化分析与超大工程重构
             '--print-timeout', process.env.AGY_PRINT_TIMEOUT || '24h',
         ];
-        const { resolvedModel, resolvedEffort } = resolveAntigravityModelAndEffort(model, effort);
+        const isBoostCommand = Boolean(command && /^\/boost\b/i.test(command.trim()));
+        const effectiveEffort = isBoostCommand ? 'high' : effort;
+        const { resolvedModel, resolvedEffort } = resolveAntigravityModelAndEffort(model, effectiveEffort);
         if (resolvedModel) {
             baseArgs.push('--model', resolvedModel);
         }
@@ -258,6 +262,11 @@ function runAntigravityTurnOnce(params) {
         }
         const permArgs = resolveAntigravityPermissionArgs(permissionMode, skipPermissions);
         baseArgs.push(...permArgs);
+        const BOOST_MODE_INSTRUCTION = `【🚀 Antigravity Boost 极致攻坚模式已激活】
+你当前正处于 Boost 深度推演与高精度攻坚模式，请严格执行以下准则：
+1. 【全链路自主推进】：针对用户需求进行全链路深度思考与多维度推演，全自主调度工具完成方案设计、代码编写、边界排查与自检验证，严禁只做一半就停止等待用户。
+2. 【严格自检与零报错】：修改后必须主动使用运行命令、测试或静态检查工具验证成果，确保高质量无回归。
+3. 【持续攻坚不中断】：若遇到中间工具报错或异常，必须自主反思并连续自愈推进，直到任务目标完全达成。`;
         let prompt = command || '';
         if (prompt && !prompt.includes(CHINESE_ENFORCEMENT_PREFIX)) {
             if (prompt.startsWith('/')) {
@@ -266,10 +275,12 @@ function runAntigravityTurnOnce(params) {
                 if (firstLineEnd !== -1) {
                     const firstLine = prompt.slice(0, firstLineEnd);
                     const rest = prompt.slice(firstLineEnd + 1);
-                    prompt = `${firstLine}\n\n${CHINESE_ENFORCEMENT_PREFIX}${rest}`;
+                    const boostSection = isBoostCommand ? `${BOOST_MODE_INSTRUCTION}\n\n` : '';
+                    prompt = `${firstLine}\n\n${boostSection}${CHINESE_ENFORCEMENT_PREFIX}${rest}`;
                 }
                 else {
-                    prompt = `${prompt}\n\n${CHINESE_ENFORCEMENT_PREFIX}`;
+                    const boostSection = isBoostCommand ? `\n\n${BOOST_MODE_INSTRUCTION}` : '';
+                    prompt = `${prompt}${boostSection}\n\n${CHINESE_ENFORCEMENT_PREFIX}`;
                 }
             }
             else {
@@ -363,14 +374,15 @@ function runAntigravityTurnOnce(params) {
         const processOutputLine = (line) => {
             if (!line || !line.trim())
                 return;
+            // Parse JSON stream event
             let obj;
             try {
                 obj = JSON.parse(line);
             }
             catch {
-                // Non-JSON line: check for critical trajectory or auth errors
-                if (/trajectory not found|conversation not found/i.test(line)) {
-                    lastStderrError = 'trajectory not found';
+                // Non-JSON line from stdout: capture as potential error or diagnostic text
+                if (line.includes('ERROR') || line.includes('error') || line.includes('failed') || line.includes('RESOURCE_EXHAUSTED')) {
+                    lastStderrError = line.trim();
                 }
                 return;
             }
@@ -417,13 +429,13 @@ function runAntigravityTurnOnce(params) {
                     const others = antigravityAccountsService.getOtherAvailableAccounts(activeEmail || '');
                     let suggestion = '';
                     if (others.length > 0) {
-                        suggestion = `。检测到你已配置备用账号（如 ${others[0].email}），可在右上角切换账号立即继续使用`;
+                        suggestion = `。检测到已配置备用账号（如 ${others[0].email}），系统即将全自动无缝轮换继续推进`;
                     }
                     else {
-                        suggestion = '。建议稍后重试或临时切换为 Gemini 2.5 Flash 模型';
+                        suggestion = '。系统即将自动启动智能退避自愈重试';
                     }
                     const formattedMsg = `⚠️ 当前账号（${activeEmail || '当前账号'}）的模型短期请求速率已达到 Google 上限 (RESOURCE_EXHAUSTED 429)${resetMsg}${suggestion}。`;
-                    quotaErrorDetails = { message: formattedMsg, resetMsg: resetDuration };
+                    quotaErrorDetails = { message: formattedMsg, resetMsg: resetDuration, rawText: rawErr };
                     try {
                         antigravityProcess.kill('SIGTERM');
                     }
@@ -587,9 +599,14 @@ function runAntigravityTurnOnce(params) {
         if (prompt && antigravityProcess.stdin) {
             antigravityProcess.stdin.write(JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n');
         }
-        // 启动 35 秒流活跃看门狗：监控底层数据流输出，彻底根除因代理掉线卡死或CLI内部指数退避长达数分钟导致的“卡思考”
+        // 动态看门狗超时：Boost 或深度模式下放宽到 300 秒（5分钟），通用模式放宽到 120 秒（2分钟）
         let lastActivityTime = Date.now();
-        const INACTIVITY_TIMEOUT_MS = 35_000;
+        const isBoostMode = Boolean((command && /^\/boost\b/i.test(command.trim())) ||
+            (command && /\[🚀.*Boost/i.test(command)));
+        const isLongRunningMode = Boolean(isBoostMode ||
+            (command && /^\/(goal|plan|schedule)\b/i.test(command.trim())) ||
+            effectiveEffort === 'high');
+        const INACTIVITY_TIMEOUT_MS = isLongRunningMode ? 300_000 : 120_000;
         watchdogTimer = setInterval(() => {
             if (isSettled) {
                 if (watchdogTimer) {
@@ -605,7 +622,7 @@ function runAntigravityTurnOnce(params) {
                     clearInterval(watchdogTimer);
                     watchdogTimer = null;
                 }
-                lastStderrError = 'stream was interrupted: inactivity watchdog triggered after 35s';
+                lastStderrError = `stream was interrupted: inactivity watchdog triggered after ${Math.round(INACTIVITY_TIMEOUT_MS / 1000)}s`;
                 if (getProxyToggle() === 'yes') {
                     try {
                         exec('pkill -f "urnetwork/urnetwork-socks" 2>/dev/null || true');
@@ -643,13 +660,13 @@ function runAntigravityTurnOnce(params) {
                 const others = antigravityAccountsService.getOtherAvailableAccounts(activeEmail || '');
                 let suggestion = '';
                 if (others.length > 0) {
-                    suggestion = `。检测到你已配置备用账号（如 ${others[0].email}），可在右上角切换账号立即继续使用`;
+                    suggestion = `。检测到已配置备用账号（如 ${others[0].email}），系统即将全自动无缝轮换继续推进`;
                 }
                 else {
-                    suggestion = '。建议稍后重试或临时切换为 Gemini 2.5 Flash 模型';
+                    suggestion = '。系统即将自动启动智能退避自愈重试';
                 }
                 const errMsg = `⚠️ 当前账号（${activeEmail || '当前账号'}）的模型短期请求速率已达到 Google 上限 (RESOURCE_EXHAUSTED 429)${resetMsg}${suggestion}。`;
-                quotaErrorDetails = { message: errMsg, resetMsg: resetDuration };
+                quotaErrorDetails = { message: errMsg, resetMsg: resetDuration, rawText: text };
                 try {
                     antigravityProcess.kill('SIGTERM');
                 }
@@ -687,7 +704,7 @@ function runAntigravityTurnOnce(params) {
                 stdoutLineBuffer = '';
             }
             if (quotaErrorDetails) {
-                reject(new QuotaExhaustedError(quotaErrorDetails.message, quotaErrorDetails.resetMsg));
+                reject(new QuotaExhaustedError(quotaErrorDetails.message, quotaErrorDetails.resetMsg, quotaErrorDetails.rawText));
                 return;
             }
             if (turnHasSucceeded || code === 0) {
@@ -787,11 +804,13 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
             activeAntigravityProcesses.delete(capturedSessionId);
         }
     };
-    const MAX_RETRIES = 5;
+    const MAX_RETRIES = 6;
     const EOF_EXTRA_RETRIES = 3;
-    const TOTAL_MAX_ATTEMPTS = MAX_RETRIES + EOF_EXTRA_RETRIES; // 8
+    const QUOTA_EXTRA_RETRIES = 3;
+    const TOTAL_MAX_ATTEMPTS = MAX_RETRIES + EOF_EXTRA_RETRIES + QUOTA_EXTRA_RETRIES; // 12
     let lastError = '';
     let finalResult = null;
+    const exhaustedAccountsInTurn = new Set();
     // Proactively ensure the active account's token is synchronized to disk and not expired
     try {
         await antigravityAccountsService.ensureActiveTokenFresh();
@@ -847,6 +866,67 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
                     throw err;
                 if (err instanceof QuotaExhaustedError) {
                     const currentSessionId = capturedSessionId || sessionId || null;
+                    console.warn(`[Antigravity Runtime] 🚨 触发 429 速率/配额限制 (回合尝试 ${attempt}/${TOTAL_MAX_ATTEMPTS})，启动智能自愈机制...`);
+                    // 1. 多账号无缝轮换 (Auto Account Failover)
+                    const activeEmail = antigravityAccountsService.getActiveEmail() || '';
+                    exhaustedAccountsInTurn.add(activeEmail.toLowerCase());
+                    const otherAvailableAccounts = antigravityAccountsService
+                        .getOtherAvailableAccounts(activeEmail)
+                        .filter((a) => !exhaustedAccountsInTurn.has(a.email.toLowerCase()));
+                    if (otherAvailableAccounts.length > 0 && attempt < TOTAL_MAX_ATTEMPTS) {
+                        const nextAccount = otherAvailableAccounts[0];
+                        console.log(`[Antigravity Runtime] 🔄 429 智能自愈：自动无缝轮换到可用备用账号 ${nextAccount.email}...`);
+                        ws.send(createNormalizedMessage({
+                            kind: 'text',
+                            role: 'assistant',
+                            content: `🔄 **【429 智能自愈】** 检测到当前账号短时请求达到 Google 上限，系统已自动无缝切换至备用账号 \`${nextAccount.email}\` 继续推进任务...`,
+                            sessionId: currentSessionId,
+                            provider: 'antigravity',
+                        }));
+                        try {
+                            await antigravityAccountsService.switchAccount(nextAccount.email);
+                            await antigravityAccountsService.ensureActiveTokenFresh();
+                        }
+                        catch (swErr) {
+                            console.warn('[Antigravity Runtime] 自动轮换账号失败:', swErr);
+                        }
+                        await new Promise((r) => setTimeout(r, 2000));
+                        if (capturedSessionId) {
+                            currentPrompt = '继续';
+                        }
+                        continue;
+                    }
+                    // 2. 智能退避等待 (Smart Exponential Backoff)
+                    // 若本轮中所有账号均已尝试过，清空集合以便退避解限后可重新使用
+                    exhaustedAccountsInTurn.clear();
+                    if (attempt < TOTAL_MAX_ATTEMPTS) {
+                        let waitSeconds = 15;
+                        const resetMatch = (err.resetTimeMsg || err.message || err.rawText || '').match(/(\d+(?:\.\d+)?)\s*(s|sec|seconds?)/i);
+                        if (resetMatch) {
+                            waitSeconds = Math.min(Math.ceil(parseFloat(resetMatch[1])) + 2, 60);
+                        }
+                        else {
+                            waitSeconds = Math.min(15 + (attempt - 1) * 10, 45);
+                        }
+                        console.warn(`[Antigravity Runtime] ⏳ 429 频控退避：等待 ${waitSeconds} 秒后自动自愈续跑 (尝试 ${attempt}/${TOTAL_MAX_ATTEMPTS})...`);
+                        ws.send(createNormalizedMessage({
+                            kind: 'text',
+                            role: 'assistant',
+                            content: `⏳ **【429 速率限制退避】** 当前账号触发 Google 云端短时频控，系统正在智能等待 **${waitSeconds} 秒** 后自动续跑，无需任何操作...`,
+                            sessionId: currentSessionId,
+                            provider: 'antigravity',
+                        }));
+                        await new Promise((r) => setTimeout(r, waitSeconds * 1000));
+                        try {
+                            await antigravityAccountsService.ensureActiveTokenFresh();
+                        }
+                        catch (_) { }
+                        if (capturedSessionId) {
+                            currentPrompt = '继续';
+                        }
+                        continue;
+                    }
+                    // 3. 所有账号及重试耗尽后的兜底提示
                     ws.send(createNormalizedMessage({
                         kind: 'error',
                         content: err.message,
