@@ -311,18 +311,14 @@ function runAntigravityTurnOnce(params) {
         }
         onProcessSpawned(antigravityProcess);
         let isSettled = false;
-        let cleanupBackgroundTimer = null;
         let watchdogTimer = null;
         let turnConversationId = capturedSessionId;
         let turnUsage = undefined;
+        let spawnedSubagentsCount = 0;
         const onAbort = () => {
             if (watchdogTimer) {
                 clearInterval(watchdogTimer);
                 watchdogTimer = null;
-            }
-            if (cleanupBackgroundTimer) {
-                clearTimeout(cleanupBackgroundTimer);
-                cleanupBackgroundTimer = null;
             }
             if (isSettled)
                 return;
@@ -339,30 +335,17 @@ function runAntigravityTurnOnce(params) {
                 return;
             isSettled = true;
             abortSignal.removeEventListener('abort', onAbort);
-            // Close stdin after final result to allow process to exit cleanly in background
-            if (antigravityProcess?.stdin && !antigravityProcess.stdin.destroyed) {
-                try {
-                    antigravityProcess.stdin.end();
-                }
-                catch (_) { }
-            }
             if (watchdogTimer) {
                 clearInterval(watchdogTimer);
                 watchdogTimer = null;
             }
-            // 优雅宽限期：留出30秒充足时间让子进程自然完成后台I/O与清理，避免截断异步子任务
-            cleanupBackgroundTimer = setTimeout(() => {
-                try {
-                    if (antigravityProcess && !antigravityProcess.killed) {
-                        antigravityProcess.kill('SIGTERM');
-                    }
-                }
-                catch (_) { }
-            }, 30000);
+            // 注意：绝不强制关闭 stdin 或强杀子进程，以保证子代理与长程推演的生命周期完整
             resolve({
                 exitCode: 0,
                 conversationId: turnConversationId,
                 usage: turnUsage,
+                spawnedSubagentsCount,
+                lastAssistantContent: turnEmitted,
             });
         };
         let stdoutLineBuffer = '';
@@ -445,6 +428,9 @@ function runAntigravityTurnOnce(params) {
                 // Tool calls and tool execution results
                 const toolInfo = update.tool_info;
                 if (toolInfo && toolInfo.name) {
+                    if (toolInfo.name === 'invoke_subagent' || toolInfo.name === 'manage_subagents' || toolInfo.name === 'define_subagent') {
+                        spawnedSubagentsCount++;
+                    }
                     const toolId = update.tool_call_id || generateMessageId('call');
                     let parsedInput = toolInfo.parameters || toolInfo.input || toolInfo.args || {};
                     if (typeof parsedInput === 'string') {
@@ -586,13 +572,6 @@ function runAntigravityTurnOnce(params) {
                     // Immediately resolve the turn without waiting for process exit cleanup (saves 2-3s delay)
                     finishSuccess();
                 }
-                // Close stdin after final result to allow process to exit cleanly
-                if (antigravityProcess?.stdin && !antigravityProcess.stdin.destroyed) {
-                    try {
-                        antigravityProcess.stdin.end();
-                    }
-                    catch (_) { }
-                }
             }
         };
         // Send user prompt via stdin
@@ -690,10 +669,6 @@ function runAntigravityTurnOnce(params) {
                 clearInterval(watchdogTimer);
                 watchdogTimer = null;
             }
-            if (cleanupBackgroundTimer) {
-                clearTimeout(cleanupBackgroundTimer);
-                cleanupBackgroundTimer = null;
-            }
             if (isSettled)
                 return;
             isSettled = true;
@@ -712,6 +687,8 @@ function runAntigravityTurnOnce(params) {
                     exitCode: 0,
                     conversationId: turnConversationId,
                     usage: turnUsage,
+                    spawnedSubagentsCount,
+                    lastAssistantContent: turnEmitted,
                 });
                 return;
             }
@@ -719,10 +696,6 @@ function runAntigravityTurnOnce(params) {
             reject(new Error(errToThrow));
         });
         antigravityProcess.on('error', (err) => {
-            if (cleanupBackgroundTimer) {
-                clearTimeout(cleanupBackgroundTimer);
-                cleanupBackgroundTimer = null;
-            }
             if (isSettled)
                 return;
             isSettled = true;
@@ -866,39 +839,8 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
                     throw err;
                 if (err instanceof QuotaExhaustedError) {
                     const currentSessionId = capturedSessionId || sessionId || null;
-                    console.warn(`[Antigravity Runtime] 🚨 触发 429 速率/配额限制 (回合尝试 ${attempt}/${TOTAL_MAX_ATTEMPTS})，启动智能自愈机制...`);
-                    // 1. 多账号无缝轮换 (Auto Account Failover)
-                    const activeEmail = antigravityAccountsService.getActiveEmail() || '';
-                    exhaustedAccountsInTurn.add(activeEmail.toLowerCase());
-                    const otherAvailableAccounts = antigravityAccountsService
-                        .getOtherAvailableAccounts(activeEmail)
-                        .filter((a) => !exhaustedAccountsInTurn.has(a.email.toLowerCase()));
-                    if (otherAvailableAccounts.length > 0 && attempt < TOTAL_MAX_ATTEMPTS) {
-                        const nextAccount = otherAvailableAccounts[0];
-                        console.log(`[Antigravity Runtime] 🔄 429 智能自愈：自动无缝轮换到可用备用账号 ${nextAccount.email}...`);
-                        ws.send(createNormalizedMessage({
-                            kind: 'text',
-                            role: 'assistant',
-                            content: `🔄 **【429 智能自愈】** 检测到当前账号短时请求达到 Google 上限，系统已自动无缝切换至备用账号 \`${nextAccount.email}\` 继续推进任务...`,
-                            sessionId: currentSessionId,
-                            provider: 'antigravity',
-                        }));
-                        try {
-                            await antigravityAccountsService.switchAccount(nextAccount.email);
-                            await antigravityAccountsService.ensureActiveTokenFresh();
-                        }
-                        catch (swErr) {
-                            console.warn('[Antigravity Runtime] 自动轮换账号失败:', swErr);
-                        }
-                        await new Promise((r) => setTimeout(r, 2000));
-                        if (capturedSessionId) {
-                            currentPrompt = '继续';
-                        }
-                        continue;
-                    }
-                    // 2. 智能退避等待 (Smart Exponential Backoff)
-                    // 若本轮中所有账号均已尝试过，清空集合以便退避解限后可重新使用
-                    exhaustedAccountsInTurn.clear();
+                    console.warn(`[Antigravity Runtime] 🚨 触发 429 速率/配额限制 (回合尝试 ${attempt}/${TOTAL_MAX_ATTEMPTS})，保持当前账号启动智能时间退避自愈...`);
+                    // 保持当前账号不变，启动智能指数退避等待
                     if (attempt < TOTAL_MAX_ATTEMPTS) {
                         let waitSeconds = 15;
                         const resetMatch = (err.resetTimeMsg || err.message || err.rawText || '').match(/(\d+(?:\.\d+)?)\s*(s|sec|seconds?)/i);
@@ -908,11 +850,11 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
                         else {
                             waitSeconds = Math.min(15 + (attempt - 1) * 10, 45);
                         }
-                        console.warn(`[Antigravity Runtime] ⏳ 429 频控退避：等待 ${waitSeconds} 秒后自动自愈续跑 (尝试 ${attempt}/${TOTAL_MAX_ATTEMPTS})...`);
+                        console.warn(`[Antigravity Runtime] ⏳ 429 频控退避：保持当前账号，等待 ${waitSeconds} 秒后自动自愈续跑 (尝试 ${attempt}/${TOTAL_MAX_ATTEMPTS})...`);
                         ws.send(createNormalizedMessage({
                             kind: 'text',
                             role: 'assistant',
-                            content: `⏳ **【429 速率限制退避】** 当前账号触发 Google 云端短时频控，系统正在智能等待 **${waitSeconds} 秒** 后自动续跑，无需任何操作...`,
+                            content: `⏳ **【429 速率限制智能退避】** 当前账号触发 Google API 短时频控限制，系统正在智能等待 **${waitSeconds} 秒** 后自动续跑，保持当前账号不变，请稍候无需操作...`,
                             sessionId: currentSessionId,
                             provider: 'antigravity',
                         }));
@@ -926,7 +868,7 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
                         }
                         continue;
                     }
-                    // 3. 所有账号及重试耗尽后的兜底提示
+                    // 重试耗尽后的兜底提示
                     ws.send(createNormalizedMessage({
                         kind: 'error',
                         content: err.message,
@@ -1029,6 +971,76 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
         }
         if (!finalResult) {
             throw new Error(lastError || 'Antigravity CLI execution failed after all retry attempts');
+        }
+        // 🚀【核心突破】：Boost 攻坚模式与子代理长程连续推进循环
+        // 彻底根除“智能体只输出了一段规划或委派话语就停下来”的缺陷
+        const isBoostModeCommand = Boolean(command && /^\/boost\b/i.test(command.trim()));
+        let autonomousStep = 0;
+        const MAX_AUTONOMOUS_STEPS = 6;
+        while (autonomousStep < MAX_AUTONOMOUS_STEPS) {
+            const hasActiveSubagents = Boolean(finalResult?.spawnedSubagentsCount && finalResult.spawnedSubagentsCount > 0);
+            const outputText = (accumulatedText || '').trim();
+            const isExplicitlyFinished = /已全部完成|全部任务已完成|修改与验证均已完成|全部目标已达成|测试全部通过/i.test(outputText) &&
+                !hasActiveSubagents;
+            // 如果不是 Boost 模式且没有子代理派生，或者模型已明确确认全部完工，则结束推进
+            if (!isBoostModeCommand && !hasActiveSubagents) {
+                break;
+            }
+            if (isExplicitlyFinished) {
+                break;
+            }
+            autonomousStep++;
+            console.log(`[Antigravity Runtime] 🚀 Boost/子代理长程攻坚推进中 (第 ${autonomousStep}/${MAX_AUTONOMOUS_STEPS} 阶段)...`);
+            ws.send(createNormalizedMessage({
+                kind: 'text',
+                role: 'assistant',
+                content: `\n\n> 🚀 **【Boost 持续攻坚推进 · 第 ${autonomousStep} 阶段】** 检测到子代理或长程任务正在演进，系统正在自动接力推进下一步方案落地与严格验证，无需手动输入...`,
+                sessionId: capturedSessionId || sessionId || processKey,
+                provider: 'antigravity',
+            }));
+            // 等待 4 秒让子代理或后台任务完成推进
+            await new Promise((r) => setTimeout(r, 4000));
+            const continuePrompt = '【🚀 Boost 系统自主推进指令】：请检查已派生子代理与当前工作区所有改动的最新执行进展。若子代理已完成或有更新，请立即提取其工作成果并自主完成下一阶段的方案设计、代码编写、排错与严格自检验证，直到所有需求彻底达成；若全部任务已完成，请给出明确的最终汇报。';
+            try {
+                const nextTurnResult = await runAntigravityTurnOnce({
+                    command: continuePrompt,
+                    workingDir,
+                    model,
+                    effort,
+                    permissionMode,
+                    skipPermissions,
+                    images,
+                    files,
+                    capturedSessionId,
+                    accumulatedText,
+                    ws,
+                    currentSessionKey: capturedSessionId || sessionId || processKey,
+                    abortSignal: abortController.signal,
+                    onSessionDiscovered: (id) => {
+                        registerSession(id);
+                    },
+                    onTextDelta: (delta) => {
+                        accumulatedText += delta;
+                    },
+                    onFullText: (full) => {
+                        accumulatedText = full;
+                    },
+                    onProcessSpawned: (proc) => {
+                        const key = capturedSessionId || sessionId || processKey;
+                        activeAntigravityProcesses.set(key, proc);
+                        if (sessionId && sessionId !== key) {
+                            activeAntigravityProcesses.set(sessionId, proc);
+                        }
+                    },
+                });
+                finalResult = nextTurnResult;
+                if (nextTurnResult.conversationId)
+                    registerSession(nextTurnResult.conversationId);
+            }
+            catch (stepErr) {
+                console.warn('[Antigravity Runtime] 自主推进回合遇到异常，进入安全结算:', stepErr?.message);
+                break;
+            }
         }
         const durationSec = Math.round((Date.now() - turnStartTime) / 100) / 10;
         const cleanAcc = (accumulatedText || '').replace(/[\u200b\s]/g, '').trim();
