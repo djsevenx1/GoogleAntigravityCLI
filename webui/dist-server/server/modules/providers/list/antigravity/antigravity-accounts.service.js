@@ -92,6 +92,10 @@ function formatDynamicCountdown(isoString, fallbackText, is5h = false, percent) 
         const target = new Date(isoString).getTime();
         if (!isNaN(target)) {
             const diff = target - Date.now();
+            // 防御：若直接传入上游未经锚定的 request_time + 7天（diff >= 6.9天），避免界面死锁在“6天23h”
+            if (diff >= 6.9 * 24 * 3600 * 1000) {
+                return defaultWeeklyText;
+            }
             if (diff > 60 * 1000) {
                 const d = Math.floor(diff / (24 * 3600 * 1000));
                 const rem = diff % (24 * 3600 * 1000);
@@ -541,14 +545,31 @@ class AntigravityAccountsService {
     parseBucket(b, fallbackTitle, is5h = false, localEntry) {
         let fraction = b?.remainingFraction != null ? Number(b.remainingFraction) : 1;
         let resetTime = b?.resetTime || null;
-        if (localEntry && localEntry.remainingFraction != null) {
-            const now = Date.now();
+        const now = Date.now();
+        if (localEntry) {
             const localExpiry = localEntry.resetTime ? new Date(localEntry.resetTime).getTime() : 0;
-            if (!localExpiry || now < localExpiry) {
-                fraction = Math.min(fraction, Math.max(0, Number(localEntry.remainingFraction)));
-                if (!resetTime && localEntry.resetTime) {
+            const isLocalValid = localExpiry > now;
+            // 核心修复：周额度时间（Weekly）为什么一直是 6天23h？
+            // 根因：Google 上游在额度未耗尽时每次返回的 resetTime 永远是 request_time + 7天（动态浮动窗口）。
+            // 若无条件优先采用上游浮动时间，倒计时就会永远停留在 6天23h 不动。
+            // 正确逻辑：只要本地记录了当前周的重置锚点且在未来有效（isLocalValid），严格锁定本地锚点，使倒计时每天平稳递减（4天、3天、2天...）；
+            // 只有当本地锚点过期（说明本周已真实过完）或不存在时，才将上游时间固化为新的当前周锚点！
+            if (!is5h) {
+                if (isLocalValid && localEntry.resetTime) {
                     resetTime = localEntry.resetTime;
                 }
+                else if (resetTime) {
+                    localEntry.resetTime = resetTime;
+                }
+            }
+            else {
+                // 5小时算力池：若本地记录了扣减周期且仍在未来，同样优先锁定
+                if (isLocalValid && localEntry.resetTime && localEntry.remainingFraction != null && localEntry.remainingFraction < 1) {
+                    resetTime = localEntry.resetTime;
+                }
+            }
+            if (localEntry.remainingFraction != null && (!localExpiry || isLocalValid)) {
+                fraction = Math.min(fraction, Math.max(0, Number(localEntry.remainingFraction)));
             }
         }
         const pct = parseFloat((fraction * 100).toFixed(1));

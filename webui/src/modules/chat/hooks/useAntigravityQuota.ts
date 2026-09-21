@@ -107,6 +107,10 @@ export function formatDynamicCountdown(
     const target = new Date(isoString).getTime();
     if (!isNaN(target)) {
       const diff = target - Date.now();
+      // 防御：若直接传入上游未经锚定的 request_time + 7天（diff >= 6.9天），避免界面死锁在“6天23h”
+      if (diff >= 6.9 * 24 * 3600 * 1000) {
+        return defaultWeeklyText;
+      }
       if (diff > 60 * 1000) {
         const d = Math.floor(diff / (24 * 3600 * 1000));
         const rem = diff % (24 * 3600 * 1000);
