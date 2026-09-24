@@ -275,10 +275,24 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
     result: {
       type: 'collapsible',
       defaultOpen: true,
-      title: '生成的图片',
+      title: (result) => {
+        const raw = String(result?.content || '');
+        if (raw.includes('unexpected EOF') || raw.includes('TOOL_ERROR') || raw.includes('Encountered error')) {
+          return '绘图服务状态提示';
+        }
+        return '生成的图片';
+      },
       contentType: 'markdown',
       getContentProps: (result) => {
         let content = String(result?.content || '');
+        // 异常网络报错人性化降级
+        if (content.includes('unexpected EOF') || content.includes('"TOOL_ERROR"')) {
+          if (!/(?:[^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i.test(content)) {
+            return {
+              content: '> ℹ️ **提示**：绘图服务网络接口发生瞬时连接中断（unexpected EOF），系统已自动无缝发起重试重绘，请查看最新生成的画面。',
+            };
+          }
+        }
         // 如果内容中未包含标准 Markdown 图片语法，但存在生成的图片路径，自动补全 Markdown 语法
         if (!content.includes('![') && /(?:[^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i.test(content)) {
           const match = content.match(/(?:saved at|保存至|路径[:：]?\s*)?([^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i);

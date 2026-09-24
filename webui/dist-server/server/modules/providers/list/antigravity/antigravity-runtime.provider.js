@@ -495,9 +495,13 @@ function runAntigravityTurnOnce(params) {
                 // 核心修复：处理独立工具执行结果（如生图完成事件 step_type === 'generic' 或包含 media）
                 const isGenericOrResult = stepType === 'generic' || stepType === 'step_result' || Boolean(update.media) || (Boolean(update.output) && !toolInfo);
                 if (isGenericOrResult && (lastActiveToolCall || Boolean(update.media))) {
-                    const isError = Boolean(update.error || update.status === 'ERROR');
                     const rawContent = update.error || update.output || update.content || '';
                     let outStr = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+                    const isError = Boolean(update.error ||
+                        update.status === 'ERROR' ||
+                        outStr.includes('"TOOL_ERROR"') ||
+                        outStr.includes('unexpected EOF') ||
+                        outStr.includes('Encountered error'));
                     const rawMedia = update.media || (update.result && update.result.media);
                     if (Array.isArray(rawMedia) && rawMedia.length > 0) {
                         for (const m of rawMedia) {

@@ -214,8 +214,14 @@ export class AntigravitySessionsProvider implements IProviderSessions {
                 );
               }
             } else if (entry.type === 'GENERIC' && (entry.content || entry.error || entry.media)) {
-              const isError = entry.status === 'ERROR' || Boolean(entry.error);
               let toolContent = String(entry.error || entry.content || '');
+              const isError = Boolean(
+                entry.status === 'ERROR' ||
+                entry.error ||
+                toolContent.includes('"TOOL_ERROR"') ||
+                toolContent.includes('unexpected EOF') ||
+                toolContent.includes('Encountered error')
+              );
 
               // 关键增强：提取底层 media 数组中的图片并在聊天框展示
               if (Array.isArray(entry.media) && entry.media.length > 0) {
