@@ -221,14 +221,14 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
     );
   }
 
-  if (displayConfig.type === 'collapsible') {
+  if (displayConfig.type === 'collapsible' || (!displayConfig.type && (displayConfig.contentType || mode === 'result'))) {
     const title = typeof displayConfig.title === 'function'
       ? displayConfig.title(parsedData)
-      : displayConfig.title || 'Details';
+      : displayConfig.title || (toolName === 'generate_image' ? '生成的图片' : 'Details');
 
     const defaultOpen = displayConfig.defaultOpen !== undefined
       ? displayConfig.defaultOpen
-      : false;
+      : (toolName === 'generate_image' ? true : false);
 
     const contentProps = displayConfig.getContentProps?.(parsedData, {
       selectedProject,

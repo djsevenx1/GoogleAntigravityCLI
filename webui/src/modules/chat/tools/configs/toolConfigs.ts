@@ -273,10 +273,23 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
       },
     },
     result: {
+      type: 'collapsible',
+      defaultOpen: true,
+      title: '生成的图片',
       contentType: 'markdown',
-      getContentProps: (result) => ({
-        content: String(result?.content || ''),
-      }),
+      getContentProps: (result) => {
+        let content = String(result?.content || '');
+        // 如果内容中未包含标准 Markdown 图片语法，但存在生成的图片路径，自动补全 Markdown 语法
+        if (!content.includes('![') && /(?:[^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i.test(content)) {
+          const match = content.match(/(?:saved at|保存至|路径[:：]?\s*)?([^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i);
+          if (match && match[1]) {
+            content += `\n\n![生成的图片](${match[1]})\n`;
+          }
+        }
+        return {
+          content,
+        };
+      },
     },
   },
 

@@ -432,6 +432,8 @@ function runAntigravityTurnOnce(params: TurnAttemptParams): Promise<TurnAttemptR
     let lastStderrError = '';
     let quotaErrorDetails: { message: string; resetMsg?: string; rawText?: string } | null = null;
     const seenToolCallIds = new Set<string>();
+    let lastActiveToolCall: { id: string; name: string } | null = null;
+    let turnStepCounter = 0;
 
     const processOutputLine = (line: string) => {
       if (!line || !line.trim()) return;
@@ -477,7 +479,9 @@ function runAntigravityTurnOnce(params: TurnAttemptParams): Promise<TurnAttemptR
           onSessionDiscovered(convId);
         }
 
-        const stepType = String(update.step_type || '').toLowerCase();
+        turnStepCounter++;
+        const stepIdx = update.step_index ?? update.step_number ?? turnStepCounter;
+        const stepType = String(update.step_type || update.type || '').toLowerCase();
         const errText = String(update.error || (stepType.includes('error') ? update.content : '') || '');
         if (errText) {
           lastStderrError = errText;
@@ -514,11 +518,14 @@ function runAntigravityTurnOnce(params: TurnAttemptParams): Promise<TurnAttemptR
           if (toolInfo.name === 'invoke_subagent' || toolInfo.name === 'manage_subagents' || toolInfo.name === 'define_subagent') {
             spawnedSubagentsCount++;
           }
-          const toolId = (update.tool_call_id as string) || generateMessageId('call');
+          // 采用稳定确定性的 toolId，与持久化历史严格对齐，彻底消除消息合并重复
+          const toolId = (update.tool_call_id as string) || (update.id as string) || `call-step-${stepIdx}`;
           let parsedInput = toolInfo.parameters || toolInfo.input || toolInfo.args || {};
           if (typeof parsedInput === 'string') {
             try { parsedInput = JSON.parse(parsedInput); } catch (_) {}
           }
+
+          lastActiveToolCall = { id: toolId, name: String(toolInfo.name) };
 
           if (!seenToolCallIds.has(toolId)) {
             seenToolCallIds.add(toolId);
@@ -550,6 +557,14 @@ function runAntigravityTurnOnce(params: TurnAttemptParams): Promise<TurnAttemptR
               }
             }
 
+            // 自动补全 Markdown 图片标签
+            if (!outStr.includes('![') && /(?:[^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i.test(outStr)) {
+              const match = outStr.match(/(?:saved at|保存至|路径[:：]?\s*)?([^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i);
+              if (match && match[1]) {
+                outStr += `\n\n![生成的图片](${match[1]})\n`;
+              }
+            }
+
             ws.send(createNormalizedMessage({
               kind: 'tool_result',
               toolName: String(toolInfo.name),
@@ -559,7 +574,51 @@ function runAntigravityTurnOnce(params: TurnAttemptParams): Promise<TurnAttemptR
               sessionId: activeSession,
               provider: 'antigravity',
             }));
+            lastActiveToolCall = null;
           }
+          return;
+        }
+
+        // 核心修复：处理独立工具执行结果（如生图完成事件 step_type === 'generic' 或包含 media）
+        const isGenericOrResult = stepType === 'generic' || stepType === 'step_result' || Boolean(update.media) || (Boolean(update.output) && !toolInfo);
+        if (isGenericOrResult && (lastActiveToolCall || Boolean(update.media))) {
+          const isError = Boolean(update.error || update.status === 'ERROR');
+          const rawContent = update.error || update.output || update.content || '';
+          let outStr = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+
+          const rawMedia = update.media || (update.result && (update.result as any).media);
+          if (Array.isArray(rawMedia) && rawMedia.length > 0) {
+            for (const m of rawMedia) {
+              if (m?.uri && typeof m.uri === 'string') {
+                const isImg = !m.mime_type || m.mime_type.startsWith('image/');
+                if (isImg) {
+                  outStr += `\n\n![生成的图片](${m.uri})\n`;
+                }
+              }
+            }
+          }
+
+          // 自动补全 Markdown 图片标签
+          if (!outStr.includes('![') && /(?:[^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i.test(outStr)) {
+            const match = outStr.match(/(?:saved at|保存至|路径[:：]?\s*)?([^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i);
+            if (match && match[1]) {
+              outStr += `\n\n![生成的图片](${match[1]})\n`;
+            }
+          }
+
+          const targetToolId = lastActiveToolCall?.id || `call-step-${stepIdx}`;
+          const targetToolName = lastActiveToolCall?.name || 'generate_image';
+
+          ws.send(createNormalizedMessage({
+            kind: 'tool_result',
+            toolName: targetToolName,
+            toolId: targetToolId,
+            toolResult: { content: outStr, isError },
+            content: outStr,
+            sessionId: activeSession,
+            provider: 'antigravity',
+          }));
+          lastActiveToolCall = null;
           return;
         }
 

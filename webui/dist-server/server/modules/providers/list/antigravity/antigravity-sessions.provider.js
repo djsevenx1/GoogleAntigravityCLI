@@ -148,8 +148,10 @@ export class AntigravitySessionsProvider {
                                 }));
                             }
                             if (Array.isArray(entry.tool_calls) && entry.tool_calls.length > 0) {
-                                for (const tc of entry.tool_calls) {
-                                    const callId = generateMessageId('call');
+                                for (let tcIdx = 0; tcIdx < entry.tool_calls.length; tcIdx++) {
+                                    const tc = entry.tool_calls[tcIdx];
+                                    const stepIdx = entry.step_index != null ? entry.step_index : (entry.step_number != null ? entry.step_number : undefined);
+                                    const callId = stepIdx != null ? `call-step-${stepIdx}` : generateMessageId('call');
                                     const toolItem = { id: callId, name: tc.name };
                                     pendingToolCalls.push(toolItem);
                                     lastToolCall = toolItem;
@@ -189,6 +191,13 @@ export class AntigravitySessionsProvider {
                                             toolContent += `\n\n![生成的图片](${m.uri})\n`;
                                         }
                                     }
+                                }
+                            }
+                            // 自动补全 Markdown 图片标签（若只有本地图片路径字符串）
+                            if (!toolContent.includes('![') && /(?:[^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i.test(toolContent)) {
+                                const match = toolContent.match(/(?:saved at|保存至|路径[:：]?\s*)?([^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i);
+                                if (match && match[1]) {
+                                    toolContent += `\n\n![生成的图片](${match[1]})\n`;
                                 }
                             }
                             const matchedTool = pendingToolCalls.shift() || lastToolCall;

@@ -327,8 +327,21 @@ function pruneRealtimeSupersededByServer(
       return true;
     }
 
-    if (message.kind === 'tool_use' && message.toolId) {
-      if (serverMessages.some((serverMessage) => serverMessage.kind === 'tool_use' && serverMessage.toolId === message.toolId)) {
+    if (message.kind === 'tool_use') {
+      if (message.toolId && serverMessages.some((serverMessage) => serverMessage.kind === 'tool_use' && serverMessage.toolId === message.toolId)) {
+        return false;
+      }
+      // 容错去重：如果 realtime 里的 tool_use 与 serverMessages 里的某个 tool_use 具有相同的 toolName 和相同的 toolInput，判定为同一工具调用，丢弃未决的 realtime 副本
+      if (message.toolName && serverMessages.some((serverMessage) => {
+        if (serverMessage.kind !== 'tool_use' || serverMessage.toolName !== message.toolName) return false;
+        try {
+          const sIn = typeof serverMessage.toolInput === 'string' ? serverMessage.toolInput : JSON.stringify(serverMessage.toolInput);
+          const rIn = typeof message.toolInput === 'string' ? message.toolInput : JSON.stringify(message.toolInput);
+          return sIn === rIn;
+        } catch (_) {
+          return false;
+        }
+      })) {
         return false;
       }
     }
