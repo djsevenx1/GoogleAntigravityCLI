@@ -411,6 +411,30 @@ export function useChatSessionState({
     return all;
   }, [storeMessages, pendingUserMessage]);
 
+  // Auto-idle self-healing watchdog: when the last message in the viewed conversation is already a
+  // complete, non-streaming assistant reply or error, and no new streaming activity occurs for 3.5s,
+  // automatically heal any stuck processing indicator in the active view session.
+  useEffect(() => {
+    if (!activeSessionId || !isProcessing || !onSessionIdle) return;
+
+    const lastMessage = chatMessages[chatMessages.length - 1];
+    if (!lastMessage) return;
+
+    const isAssistantFinal =
+      (lastMessage.role === 'assistant' || lastMessage.type === 'error' || (lastMessage as any).kind === 'error')
+      && !lastMessage.isStreaming;
+
+    if (isAssistantFinal) {
+      const timer = window.setTimeout(() => {
+        if (processingSessionsRef.current?.has(activeSessionId)) {
+          onSessionIdle(activeSessionId);
+        }
+      }, 3500);
+
+      return () => window.clearTimeout(timer);
+    }
+  }, [activeSessionId, chatMessages, isProcessing, onSessionIdle]);
+
   /* ---------------------------------------------------------------- */
   /*  addMessage                                                       */
   /* ---------------------------------------------------------------- */

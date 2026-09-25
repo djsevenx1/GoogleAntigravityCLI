@@ -14,7 +14,7 @@ import { useDropzone } from 'react-dropzone';
 import { api } from '@/shared/api';
 import { PROVIDER_PERMISSION_PREFERENCE_KEYS } from '@/shared/constants';
 import { readUserPreference } from '@/shared/userSettings';
-import type { CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, ModelCommandData, QueuedDraft, SessionActivityMap, StatusCommandData,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
+import type { CommandModalPayload, CostCommandData, HelpCommandData, MarkSessionProcessing, MarkSessionIdle, ModelCommandData, QueuedDraft, SessionActivityMap, StatusCommandData,QueuedSendOptions,ChatAttachment,ChatMessage,PendingPermissionRequest,PermissionMode,SessionEstablishedContext,Project,ProjectSession,LLMProvider,SlashCommand } from '@/shared/types';
 import { grantClaudeToolPermission } from '@/modules/chat/utils/chatPermissions';
 import {
   clearQueuedMessage,
@@ -51,6 +51,7 @@ type UseChatComposerStateArgs = {
   sendMessage: (message: unknown) => void;
   sendByCtrlEnter?: boolean;
   onSessionProcessing?: MarkSessionProcessing;
+  onSessionIdle?: MarkSessionIdle;
   /**
    * Invoked with the freshly allocated session id when the user sends the
    * first message of a brand-new conversation. The backend allocates the id
@@ -169,6 +170,7 @@ export function useChatComposerState({
   sendMessage,
   sendByCtrlEnter,
   onSessionProcessing,
+  onSessionIdle,
   onSessionEstablished,
   onFileOpen,
   onShowSettings,
@@ -1254,11 +1256,15 @@ export function useChatComposerState({
   }, [resetCommandMenuState]);
 
   const handleAbortSession = useCallback(() => {
+    const targetSessionId = selectedSession?.id || currentSessionId || null;
+    if (targetSessionId) {
+      onSessionIdle?.(targetSessionId);
+    }
+
     if (!canAbortSession) {
       return;
     }
 
-    const targetSessionId = selectedSession?.id || currentSessionId || null;
     if (!targetSessionId) {
       console.warn('Abort requested but no session ID is available.');
       return;
@@ -1270,7 +1276,7 @@ export function useChatComposerState({
       type: 'chat.abort',
       sessionId: targetSessionId,
     });
-  }, [canAbortSession, currentSessionId, selectedSession?.id, sendMessage]);
+  }, [canAbortSession, currentSessionId, onSessionIdle, selectedSession?.id, sendMessage]);
 
   const handleGrantToolPermission = useCallback(
     (suggestion: { entry: string; toolName: string }) => {

@@ -135,11 +135,9 @@ export function useChatRealtimeHandlers({
           if (msg.isProcessing) {
             onSessionProcessing?.(sid);
           } else {
-            // Idle ack: ignore it if a newer request started after the
-            // subscribe was sent — the ack describes the older state.
-            onSessionIdle?.(sid, {
-              ifStartedBefore: statusCheckSentAtRef.current.get(sid),
-            });
+            // Authoritative server state: run has finished or no run is active.
+            // Clear processing state unconditionally to prevent stuck indicators.
+            onSessionIdle?.(sid);
           }
 
           const isViewedSession = sid === activeViewSessionId;
@@ -281,8 +279,17 @@ export function useChatRealtimeHandlers({
           // with exactly one, regardless of success, failure, or abort. The
           // indicator derives from the processing map, so deleting the entry
           // hides it immediately and atomically.
-          onSessionIdle?.(sid);
-          if (sid === activeViewSessionId) {
+          if (sid) onSessionIdle?.(sid);
+          if (typeof msg.sessionId === 'string' && msg.sessionId) onSessionIdle?.(msg.sessionId);
+          if (typeof (msg as any).actualSessionId === 'string' && (msg as any).actualSessionId) {
+            onSessionIdle?.((msg as any).actualSessionId);
+          }
+          if (typeof (msg as any).initialSessionId === 'string' && (msg as any).initialSessionId) {
+            onSessionIdle?.((msg as any).initialSessionId);
+          }
+          if (activeViewSessionId) onSessionIdle?.(activeViewSessionId);
+
+          if (sid === activeViewSessionId || !sid || msg.sessionId === activeViewSessionId) {
             pendingPermissionRequestsRef.current = [];
             setPendingPermissionRequests([]);
           }

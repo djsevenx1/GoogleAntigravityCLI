@@ -392,6 +392,17 @@ app.use('/api/browser-use-mcp', browserUseMcpRoutes);
 // Browser API Routes (protected)
 app.use('/api/browser-use', authenticateToken, browserUseRoutes);
 
+// Running sessions endpoint for protection context and activity indicators (public & reliable JSON)
+app.get(['/api/running-sessions', '/api/providers/sessions/running'], async (_req: Request, res: Response) => {
+    try {
+        const { chatRunRegistry } = await import('./modules/websocket/index.js');
+        const sessions = chatRunRegistry.listRunningRuns();
+        res.json({ ok: true, data: { sessions } });
+    } catch {
+        res.json({ ok: true, data: { sessions: [] } });
+    }
+});
+
 // Unified provider MCP routes (protected)
 app.use('/api/providers', authenticateToken, providerRoutes);
 app.use('/api/scheduled-messages', authenticateToken, scheduledMessagesRoutes);

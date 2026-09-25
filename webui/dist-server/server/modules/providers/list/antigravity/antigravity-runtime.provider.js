@@ -1125,6 +1125,8 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
             tokens,
             quotaSnapshot: fastQuota || undefined,
         };
+        completeMessage.initialSessionId = sessionId || processKey;
+        completeMessage.actualSessionId = finalSessionId;
         ws.send(completeMessage);
         notifyTerminalState({ code: 0 });
         cleanupProcessTracking();
@@ -1175,11 +1177,14 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
                     provider: 'antigravity',
                 }));
             }
-            ws.send(createCompleteMessage({
+            const recoverableComplete = createCompleteMessage({
                 provider: 'antigravity',
                 sessionId: finalSessionId,
                 exitCode: 0,
-            }));
+            });
+            recoverableComplete.initialSessionId = sessionId || processKey;
+            recoverableComplete.actualSessionId = finalSessionId;
+            ws.send(recoverableComplete);
             notifyTerminalState({ code: 0 });
             cleanupProcessTracking();
             return { conversationId: capturedSessionId, exitCode: 0 };
@@ -1193,11 +1198,14 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
                 provider: 'antigravity',
             }));
         }
-        ws.send(createCompleteMessage({
+        const failureComplete = createCompleteMessage({
             provider: 'antigravity',
             sessionId: finalSessionId,
             exitCode: 1,
-        }));
+        });
+        failureComplete.initialSessionId = sessionId || processKey;
+        failureComplete.actualSessionId = finalSessionId;
+        ws.send(failureComplete);
         notifyTerminalState({ code: 1, error: humanizedMsg });
         cleanupProcessTracking();
         throw err;

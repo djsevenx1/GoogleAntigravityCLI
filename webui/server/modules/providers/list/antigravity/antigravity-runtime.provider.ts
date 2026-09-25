@@ -1283,6 +1283,8 @@ export async function spawnAntigravity(
       tokens,
       quotaSnapshot: fastQuota || undefined,
     };
+    (completeMessage as AnyRecord).initialSessionId = sessionId || processKey;
+    (completeMessage as AnyRecord).actualSessionId = finalSessionId;
     ws.send(completeMessage);
 
     notifyTerminalState({ code: 0 });
@@ -1336,11 +1338,14 @@ export async function spawnAntigravity(
           provider: 'antigravity',
         }));
       }
-      ws.send(createCompleteMessage({
+      const recoverableComplete = createCompleteMessage({
         provider: 'antigravity',
         sessionId: finalSessionId,
         exitCode: 0,
-      }));
+      });
+      (recoverableComplete as AnyRecord).initialSessionId = sessionId || processKey;
+      (recoverableComplete as AnyRecord).actualSessionId = finalSessionId;
+      ws.send(recoverableComplete);
       notifyTerminalState({ code: 0 });
       cleanupProcessTracking();
       return { conversationId: capturedSessionId, exitCode: 0 };
@@ -1357,11 +1362,14 @@ export async function spawnAntigravity(
       }));
     }
 
-    ws.send(createCompleteMessage({
+    const failureComplete = createCompleteMessage({
       provider: 'antigravity',
       sessionId: finalSessionId,
       exitCode: 1,
-    }));
+    });
+    (failureComplete as AnyRecord).initialSessionId = sessionId || processKey;
+    (failureComplete as AnyRecord).actualSessionId = finalSessionId;
+    ws.send(failureComplete);
 
     notifyTerminalState({ code: 1, error: humanizedMsg });
     cleanupProcessTracking();

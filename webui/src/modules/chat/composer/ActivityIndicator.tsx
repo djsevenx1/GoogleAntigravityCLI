@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Shimmer } from '@/shared/ui';
@@ -35,17 +35,16 @@ export default function ActivityIndicator({ activity, onAbort, isInputFocused = 
   const { t } = useTranslation('chat');
   const [renderedActivity, setRenderedActivity] = useState<SessionActivity | null>(activity);
   const [isExiting, setIsExiting] = useState(false);
-  const startedAt = renderedActivity?.startedAt ?? null;
+  const fallbackStartedAtRef = useRef<number>(Date.now());
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
     if (activity) {
+      fallbackStartedAtRef.current = typeof activity.startedAt === 'number' && activity.startedAt > 0 ? activity.startedAt : Date.now();
       setRenderedActivity(activity);
       setIsExiting(false);
       return;
     }
-
-    if (!renderedActivity) return;
 
     setIsExiting(true);
     const timer = setTimeout(() => {
@@ -54,15 +53,22 @@ export default function ActivityIndicator({ activity, onAbort, isInputFocused = 
     }, EXIT_ANIMATION_MS);
 
     return () => clearTimeout(timer);
-  }, [activity, renderedActivity]);
+  }, [activity]);
+
+  const rawStartedAt = renderedActivity?.startedAt;
+  const effectiveStartedAt = typeof rawStartedAt === 'number' && rawStartedAt > 0 ? rawStartedAt : fallbackStartedAtRef.current;
 
   useEffect(() => {
-    if (startedAt === null) return;
-    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    if (!renderedActivity) {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - effectiveStartedAt) / 1000)));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [startedAt]);
+  }, [renderedActivity, effectiveStartedAt]);
 
   if (!renderedActivity) return null;
 
@@ -109,7 +115,11 @@ export default function ActivityIndicator({ activity, onAbort, isInputFocused = 
         {renderedActivity.canInterrupt && onAbort && (
           <button
             type="button"
-            onClick={onAbort}
+            onClick={() => {
+              setIsExiting(true);
+              setTimeout(() => setRenderedActivity(null), 100);
+              onAbort?.();
+            }}
             className={`${tabSurfaceClassName} pointer-events-auto gap-1.5 text-muted-foreground hover:bg-card hover:text-destructive`}
             aria-label={t('claudeStatus.stop', { defaultValue: 'Stop' })}
           >

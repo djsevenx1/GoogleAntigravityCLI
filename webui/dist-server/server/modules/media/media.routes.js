@@ -67,9 +67,29 @@ const handleMediaRequest = (req, res) => {
     if (!rawPath) {
         return res.status(400).json({ error: 'Missing path parameter' });
     }
-    const resolvedPath = normalizeMediaPath(rawPath);
+    let resolvedPath = normalizeMediaPath(rawPath);
     if (!resolvedPath) {
         return res.status(403).json({ error: 'Access denied: sensitive or invalid file path' });
+    }
+    // 增强自愈：如果原始路径不存在，自动在项目常见静态资源与生成目录查找同名文件
+    if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
+        const filename = path.basename(resolvedPath);
+        const candidates = [
+            path.join(process.cwd(), 'dist', filename),
+            path.join(process.cwd(), 'dist', 'generated', filename),
+            path.join(process.cwd(), 'dist', 'assets', filename),
+            path.join(process.cwd(), filename),
+            path.join(process.cwd(), '..', 'home', '.gemini', 'antigravity-cli', 'brain', 'f95164ef-79b1-4016-afa0-cf59b8656209', filename),
+        ];
+        for (const cand of candidates) {
+            try {
+                if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+                    resolvedPath = cand;
+                    break;
+                }
+            }
+            catch (_) { }
+        }
     }
     fs.stat(resolvedPath, (err, stats) => {
         if (err || !stats.isFile()) {

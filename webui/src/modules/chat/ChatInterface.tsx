@@ -246,6 +246,7 @@ function ChatInterface({
     sendMessage,
     sendByCtrlEnter,
     onSessionProcessing,
+    onSessionIdle,
     onSessionEstablished: handleSessionEstablished,
     onFileOpen,
     onShowSettings,
