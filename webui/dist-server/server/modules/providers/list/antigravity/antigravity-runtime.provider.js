@@ -91,16 +91,19 @@ function resolveAntigravityModelAndEffort(model, effort) {
     let resolvedEffort = effort && typeof effort === 'string' && effort.toLowerCase() !== 'default' && effort.trim() !== ''
         ? effort.toLowerCase().trim()
         : undefined;
-    // Handle legacy suffixes like gemini-3.8-flash-high -> gemini-3.8-flash
-    const legacyMatch = resolvedModel.match(/^(.+)-(high|medium|low)$/);
-    if (legacyMatch) {
-        resolvedModel = legacyMatch[1];
-        if (!resolvedEffort) {
-            resolvedEffort = legacyMatch[2];
+    // 关键修复：仅针对 Google 原生 gemini-* 模型剥离历史后缀（如 gemini-3.8-flash-high -> gemini-3.8-flash）
+    // 严禁将三方模型 gpt-oss-120b-medium 截断为不存在的 gpt-oss-120b
+    if (resolvedModel.startsWith('gemini-')) {
+        const legacyMatch = resolvedModel.match(/^(.+)-(high|medium|low)$/);
+        if (legacyMatch) {
+            resolvedModel = legacyMatch[1];
+            if (!resolvedEffort) {
+                resolvedEffort = legacyMatch[2];
+            }
         }
     }
-    // Antigravity CLI only supports --effort for gemini-* models.
-    // Passing --effort to claude-* or gpt-* models causes CLI to exit with an error.
+    // Antigravity CLI 规范：仅原生 gemini-* 模型支持并强制要求 --effort 参数 (low/medium/high)
+    // 严禁向所有三方模型（claude-opus-4-6-thinking、claude-sonnet-4-6、gpt-oss-120b-medium 等）传递 --effort，否则 CLI 立即报错拒绝启动
     const supportsEffort = resolvedModel.startsWith('gemini-');
     if (supportsEffort) {
         // 关键修复：Antigravity CLI 对所有 gemini-* 模型强制要求 --effort (low/medium/high)

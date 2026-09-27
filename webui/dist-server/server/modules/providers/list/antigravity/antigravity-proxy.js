@@ -252,7 +252,19 @@ export function resolveAntigravityProxyEnv(baseEnv = process.env) {
             env[key] = value;
     }
     const mode = getProxyToggle();
-    if (mode === 'no') {
+    // 关键自愈优化：即便开关设置为 yes，若 19999 代理端口并未真正监听，
+    // 坚决不注入死代理（避免触发 connection refused 导致三方模型与所有请求卡死12次重试），
+    // 而是安全优雅回退为直连模式（当前服务器直连 Google 4秒出词，稳定可靠）
+    let isListening = isSocksListening(19999);
+    if (mode === 'yes' && !isListening) {
+        try {
+            const startRes = startUrnSocksInstant();
+            isListening = startRes.socksListening;
+        }
+        catch (_) { }
+    }
+    const effectiveMode = (mode === 'yes' && isListening) ? 'yes' : 'no';
+    if (effectiveMode === 'no') {
         // Direct connection mode: completely remove all proxy environment variables
         delete env.ALL_PROXY;
         delete env.all_proxy;

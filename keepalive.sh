@@ -64,7 +64,11 @@ EOF
           ${URN_REGION:+--region="$URN_REGION"} \
           ${URN_CITY:+--city="$URN_CITY"} \
           ${URN_PROVIDER_ID:+--provider-id="$URN_PROVIDER_ID"} >> "$URNETWORK_SOCKS_LOG" 2>&1 || true
-        sleep 1
+        sleep 2
+        if ! ss -tlnp 2>/dev/null | grep -q ":${URNETWORK_SOCKS_PORT} "; then
+          echo "[socks] $(date '+%F %T'): 启动未监听(可能触发上游频控429)，等待 20 秒后重试..." >> "$URNETWORK_SOCKS_LOG"
+          sleep 20
+        fi
       else
         sleep 2
       fi
