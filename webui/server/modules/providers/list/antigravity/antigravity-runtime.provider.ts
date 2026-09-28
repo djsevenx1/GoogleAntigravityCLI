@@ -690,6 +690,21 @@ function runAntigravityTurnOnce(params: TurnAttemptParams): Promise<TurnAttemptR
             onTextDelta(content);
           }
         }
+
+        // 核心修复：如果模型已完成纯文本回复（status 为 DONE，且无待执行的工具调用与 tool_info）
+        // 代表当前 Turn 的 Assistant 响应已经圆满终结，立即触发 finishSuccess() 解除看门狗，
+        // 彻底消除因交互式 REPL 进程常驻等待导致的 120s 看门狗超时杀进程与无限循环重试缺陷。
+        const isDoneModelResponse =
+          (stepType === 'planner_response' || stepType === 'agent_response') &&
+          String(update.status || '').toUpperCase() === 'DONE' &&
+          (!update.tool_calls || (Array.isArray(update.tool_calls) && update.tool_calls.length === 0)) &&
+          !update.tool_info;
+
+        if (isDoneModelResponse) {
+          turnHasSucceeded = true;
+          finishSuccess();
+        }
+
         return;
       }
 
