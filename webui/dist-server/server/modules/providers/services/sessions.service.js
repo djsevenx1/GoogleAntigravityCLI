@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { projectsDb, sessionsDb } from '../../../modules/database/index.js';
@@ -498,6 +499,19 @@ export const sessionsService = {
                 removedFromDisk = (await removeFileIfExists(transcript)) || removedFromDisk;
             }
         }
+        // 关键自愈优化：删除会话时，主动中止并在 OS 层面强杀该会话残留的所有后台孤儿进程
+        try {
+            chatRunRegistry.completeRun(sessionId, { exitCode: 1 });
+        }
+        catch (_) { }
+        try {
+            providerRegistry.resolveProvider('antigravity').runtime.abort?.(sessionId);
+        }
+        catch (_) { }
+        try {
+            execFileSync('pkill', ['-9', '-f', `conversation ${sessionId}`]);
+        }
+        catch (_) { }
         sessionsDb.clearSupersededProviderSessions(sessionId);
         const deleted = sessionsDb.deleteSessionById(sessionId);
         if (!deleted) {

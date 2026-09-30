@@ -1,4 +1,4 @@
-import { exec } from 'node:child_process';
+import { exec, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -302,6 +302,21 @@ function runAntigravityTurnOnce(params) {
             ...process.env,
             HOME: process.env.AGY_HOME || process.env.HOME,
         });
+        // 关键自愈优化：单会话单实例保障，启动新轮次前先强制终结同 conversation 的历史残留孤儿进程
+        const targetConvId = capturedSessionId;
+        if (targetConvId) {
+            try {
+                const oldProc = activeAntigravityProcesses.get(targetConvId);
+                if (oldProc && !oldProc.killed) {
+                    try {
+                        oldProc.kill('SIGTERM');
+                    }
+                    catch (_) { }
+                }
+                execFileSync('pkill', ['-9', '-f', `conversation ${targetConvId}`]);
+            }
+            catch (_) { }
+        }
         let antigravityProcess;
         try {
             antigravityProcess = spawnFunction(binPath, baseArgs, {
