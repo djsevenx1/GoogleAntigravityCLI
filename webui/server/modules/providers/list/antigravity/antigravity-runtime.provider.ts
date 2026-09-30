@@ -18,7 +18,12 @@ import {
 import type { IProviderRuntime } from '@/shared/interfaces.js';
 import type { AnyRecord, ProviderRuntimeContext, ProviderRuntimeWriter } from '@/shared/types.js';
 import { resolveAntigravityBinary } from './antigravity-auth.provider.js';
-import { getProxyToggle, resolveAntigravityProxyEnv } from './antigravity-proxy.js';
+import {
+  getProxyToggle,
+  resolveAntigravityProxyEnv,
+  notifyTurnStarted,
+  notifyTurnEnded,
+} from './antigravity-proxy.js';
 import { antigravityAccountsService } from './antigravity-accounts.service.js';
 import { localizeEnglishThought, humanizeAntigravityError } from './antigravity-chinese-filter.js';
 export { localizeEnglishThought, humanizeAntigravityError };
@@ -988,6 +993,13 @@ export async function spawnAntigravity(
     activeAbortControllers.set(sessionId, abortController);
   }
 
+  // 触发 Scale-to-Zero 按需唤醒与活跃状态记录
+  try {
+    await notifyTurnStarted();
+  } catch (wakeErr: any) {
+    console.warn('[Scale-to-Zero] 代理唤醒自愈提示:', wakeErr?.message);
+  }
+
   const registerSession = (nextSessionId: string) => {
     if (!nextSessionId || capturedSessionId === nextSessionId) return;
     capturedSessionId = nextSessionId;
@@ -1527,6 +1539,8 @@ export async function spawnAntigravity(
     notifyTerminalState({ code: 1, error: humanizedMsg });
     cleanupProcessTracking();
     throw err;
+  } finally {
+    notifyTurnEnded();
   }
 }
 

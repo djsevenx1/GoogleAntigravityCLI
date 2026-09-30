@@ -57,6 +57,10 @@ type ProxyStatusData = {
   quantum: boolean;
   activeProviderCount: number | null;
   activeCountry: string;
+  scaleToZero?: boolean;
+  idleState?: 'active' | 'idle' | 'sleeping';
+  idleSecondsRemaining?: number;
+  activeTurns?: number;
 };
 
 const DEFAULT_LOCATIONS: BringYourLocation[] = [
@@ -105,6 +109,9 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
   const [isRotating, setIsRotating] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+
+  // Tracks pending manual sleep/wake requests for the Scale-to-Zero proxy mechanism
+  const [isSleepingProxy, setIsSleepingProxy] = useState(false);
 
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -363,6 +370,50 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
     }
   };
 
+  const handleSleepProxy = async () => {
+    setIsSleepingProxy(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const res = await api.providers.sleepAntigravityProxy();
+      if (res.ok) {
+        const d = await readApiJson<any>(res);
+        setSuccessMsg('✓ ' + (d?.data?.message || d?.message || '代理已进入空闲休眠（已断开住宅链路，0流量消耗）'));
+        setTimeout(() => setSuccessMsg(null), 4000);
+        setTimeout(() => void loadAllSettings(), 800);
+      } else {
+        const d = await readApiJson<any>(res);
+        setErrorMsg('休眠失败: ' + (d?.data?.error || d?.error || '无法执行休眠'));
+      }
+    } catch (e: any) {
+      setErrorMsg('休眠异常: ' + (e?.message || '网络中断'));
+    } finally {
+      setIsSleepingProxy(false);
+    }
+  };
+
+  const handleWakeProxy = async () => {
+    setIsSleepingProxy(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const res = await api.providers.wakeAntigravityProxy();
+      if (res.ok) {
+        const d = await readApiJson<any>(res);
+        setSuccessMsg('✓ ' + (d?.data?.message || d?.message || '代理已按需唤醒就绪！'));
+        setTimeout(() => setSuccessMsg(null), 4000);
+        setTimeout(() => void loadAllSettings(), 1200);
+      } else {
+        const d = await readApiJson<any>(res);
+        setErrorMsg('唤醒失败: ' + (d?.data?.error || d?.error || '无法唤醒代理'));
+      }
+    } catch (e: any) {
+      setErrorMsg('唤醒异常: ' + (e?.message || '网络中断'));
+    } finally {
+      setIsSleepingProxy(false);
+    }
+  };
+
   const activeAccount = accounts.find((a) => a.email.toLowerCase() === (activeEmail || '').toLowerCase()) || accounts[0];
 
   return (
@@ -614,6 +665,57 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
               </>
             )}
           </div>
+
+          {proxyEnabled && (
+            <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-semibold text-foreground">🌿 智能休眠 (Scale-to-Zero):</span>
+                {(!proxyStatus?.socksListening || proxyStatus?.idleState === 'sleeping') ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    空闲休眠中（0流量/0心跳消耗，发起对话时自动唤醒）
+                  </span>
+                ) : proxyStatus?.idleState === 'active' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30">
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                    活跃工作中（对话结束60秒后自动休眠断开）
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    空闲倒计时中（将在 {proxyStatus?.idleSecondsRemaining || 60}秒后休眠断开）
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {(!proxyStatus?.socksListening || proxyStatus?.idleState === 'sleeping') ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleWakeProxy()}
+                    disabled={isSleepingProxy}
+                    className="h-6 px-2 text-[10.5px] rounded-lg border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10"
+                    title="立即唤醒 SOCKS5 代理"
+                  >
+                    {isSleepingProxy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                    <span>立即唤醒</span>
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleSleepProxy()}
+                    disabled={isSleepingProxy}
+                    className="h-6 px-2 text-[10.5px] rounded-lg border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted"
+                    title="立即进入空闲休眠断开连接"
+                  >
+                    {isSleepingProxy ? <Loader2 className="h-3 w-3 animate-spin" /> : <span>立即休眠省流</span>}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Proxy Form Settings */}
