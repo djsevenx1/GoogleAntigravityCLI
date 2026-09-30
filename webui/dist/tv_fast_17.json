@@ -1,0 +1,73 @@
+{
+  "cache_time": 7200,
+  "api_site": {
+    "feile4k": {
+      "name": "⚡菲乐4K (TV极速首选·0秒起播)",
+      "api": "https://bfzyapi.com/api.php/provide/vod/"
+    },
+    "jingpin2k": {
+      "name": "🚀精品2K (TV高并发·秒开)",
+      "api": "https://api.guangsuapi.com/api.php/provide/vod/"
+    },
+    "shenhua": {
+      "name": "💎神话 (蓝光原画·纯净切片)",
+      "api": "https://hhzyapi.com/api.php/provide/vod/"
+    },
+    "tiantang": {
+      "name": "🎬天堂 (极速直连·无广告)",
+      "api": "https://jszyapi.com/api.php/provide/vod/"
+    },
+    "xunfei": {
+      "name": "☆讯飞☆ (速播加速·稳定)",
+      "api": "https://subocaiji.com/api.php/provide/vod/"
+    },
+    "jingbao4k": {
+      "name": "鲸宝4K (超清大片专线)",
+      "api": "https://www.hongniuzy2.com/api.php/provide/vod/"
+    },
+    "vip4k": {
+      "name": "VIP4K (金鹰原画专线)",
+      "api": "https://jyzyapi.com/api.php/provide/vod/"
+    },
+    "xgulu4k": {
+      "name": "新咕噜4K (量子专线)",
+      "api": "https://cj.lziapi.com/api.php/provide/vod/"
+    },
+    "kafei": {
+      "name": "咖啡 (新浪热播专线)",
+      "api": "https://api.xinlangapi.com/xinlangapi.php/provide/vod/"
+    },
+    "mayi": {
+      "name": "蚂蚁 (纯净切片)",
+      "api": "https://ikunzyapi.com/api.php/provide/vod/"
+    },
+    "qiqu": {
+      "name": "☆奇趣☆ (U酷极速通道)",
+      "api": "https://api.ukuapi.com/api.php/provide/vod/"
+    },
+    "kumeng": {
+      "name": "☆酷萌☆ (最大超清切片)",
+      "api": "https://zuidazy.me/api.php/provide/vod/"
+    },
+    "guozhi": {
+      "name": "☆果汁☆ (暴风高速通道)",
+      "api": "https://bfzyapi.com/api.php/provide/vod/"
+    },
+    "baofeng": {
+      "name": "暴风 (官方专线)",
+      "api": "https://bfzyapi.com/api.php/provide/vod/"
+    },
+    "liangzi": {
+      "name": "量子 (官方专线)",
+      "api": "https://cj.lziapi.com/api.php/provide/vod/"
+    },
+    "feifan": {
+      "name": "非凡 (光速官方专线)",
+      "api": "https://api.guangsuapi.com/api.php/provide/vod/"
+    },
+    "xiaoxiong": {
+      "name": "小熊 (极速切片)",
+      "api": "https://jszyapi.com/api.php/provide/vod/"
+    }
+  }
+}

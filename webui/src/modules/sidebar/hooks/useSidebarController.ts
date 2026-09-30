@@ -809,6 +809,9 @@ export function useSidebarController({
           return remaining;
         });
         await fetchArchivedSessions();
+        try {
+          await onRefresh();
+        } catch (_) {}
       } else {
         const errorText = await response.text();
         console.error('[Sidebar] Failed to delete session:', {
@@ -821,7 +824,7 @@ export function useSidebarController({
       console.error('[Sidebar] Error deleting session:', error);
       alert(t('messages.deleteSessionError'));
     }
-  }, [fetchArchivedSessions, onSessionDelete, pendingDeletion, t]);
+  }, [fetchArchivedSessions, onRefresh, onSessionDelete, pendingDeletion, t]);
 
   const requestProjectDelete = useCallback(
     (project: Project) => {

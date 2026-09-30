@@ -588,6 +588,17 @@ export const sessionsService = {
       });
     }
 
+    // 先中止可能仍在运行的底层会话进程，杜绝继续向磁盘写入日志
+    try {
+      const { providerRuntimeService } = await import(
+        '@/modules/providers/services/provider-runtime.service.js'
+      );
+      await providerRuntimeService.abort(session.provider as LLMProvider, sessionId).catch(() => {});
+      if (session.provider_session_id && session.provider_session_id !== sessionId) {
+        await providerRuntimeService.abort(session.provider as LLMProvider, session.provider_session_id).catch(() => {});
+      }
+    } catch (_) {}
+
     if (!options.force) {
       sessionsDb.updateSessionIsArchived(sessionId, true);
       return {

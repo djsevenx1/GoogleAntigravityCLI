@@ -51,20 +51,12 @@ const menuBaseStyle: CSSProperties = {
 };
 
 const namespaceLabels: Record<string, string> = {
-  frequent: '常用命令',
-  builtin: '内置命令',
-  skill: '技能扩展',
-  project: '项目命令',
-  user: '全局命令',
-  other: '其他命令',
-};
-
-const badgeTypeLabels: Record<string, string> = {
-  builtin: '内置',
-  skill: '技能',
-  project: '项目',
-  user: '全局',
-  frequent: '常用',
+  frequent: 'Frequently Used',
+  builtin: 'Built-in Commands',
+  skill: 'Skills',
+  project: 'Project Commands',
+  user: 'User Commands',
+  other: 'Other Commands',
 };
 
 const namespaceIcons: Record<string, LucideIcon> = {
@@ -251,7 +243,7 @@ export default function CommandMenu({
           textAlign: 'center',
         }}
       >
-        暂无可用命令
+        No commands available
       </div>
     );
   }
@@ -310,7 +302,7 @@ export default function CommandMenu({
                     </span>
                     {command.metadata?.type && (
                       <span className="command-metadata-badge shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
-                        {badgeTypeLabels[String(command.metadata.type).toLowerCase()] || command.metadata.type}
+                        {command.metadata.type}
                       </span>
                     )}
                   </div>

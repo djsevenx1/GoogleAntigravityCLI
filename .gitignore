@@ -65,3 +65,11 @@ finalize-*.cjs
 bin/*.old
 bin/.*.old
 
+LunaTV-Mobile-Private
+*.bundle
+*.apk
+**/*.apk
+webui/asian_beauty_*.jpg
+public/apks/
+webui/dist/apks/
+webui/public/apks/

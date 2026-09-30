@@ -105,7 +105,10 @@ export class AntigravitySessionSynchronizer implements IProviderSessionSynchroni
           if (_since && stats.mtime < _since) {
             continue;
           }
-          const existing = sessionsDb.getSessionById(convId);
+          const existing = sessionsDb.getSessionById(convId) || sessionsDb.getSessionByProviderSessionId(convId);
+          if (existing && existing.isArchived) {
+            continue;
+          }
           const existingName = existing?.custom_name;
           const hasMeaningfulName = Boolean(existingName && !isGenericSessionName(existingName));
           // 如果数据库中已有且未发生过修改，无需重复插入更新
@@ -132,14 +135,23 @@ export class AntigravitySessionSynchronizer implements IProviderSessionSynchroni
   }
 
   async synchronizeFile(filePath: string): Promise<string | null> {
-    // 严格过滤：忽略所有 chunks 分片与 full 镜像，仅处理主 transcript.jsonl
-    if (!filePath.endsWith('transcript.jsonl') || filePath.includes('chunks') || filePath.includes('transcript_full')) {
-      return null;
-    }
     const parts = path.normalize(filePath).split(path.sep);
     const brainIdx = parts.lastIndexOf('brain');
     if (brainIdx === -1 || brainIdx + 1 >= parts.length) return null;
     const convId = parts[brainIdx + 1];
+
+    // 如果是分片 chunk 或 transcript_full，安全返回 convId，不改写主路径与元数据
+    if (filePath.includes('chunks') || filePath.includes('transcript_full')) {
+      return convId;
+    }
+    if (!filePath.endsWith('transcript.jsonl')) {
+      return null;
+    }
+
+    const existing = sessionsDb.getSessionById(convId) || sessionsDb.getSessionByProviderSessionId(convId);
+    if (existing && existing.isArchived) {
+      return convId;
+    }
 
     const now = Date.now();
     const lastSync = this.lastSyncTimes.get(convId) || 0;
@@ -155,7 +167,6 @@ export class AntigravitySessionSynchronizer implements IProviderSessionSynchroni
     const bestLogFile = primaryLogFile || filePath;
 
     // Check existing session in DB to preserve any user-defined or already resolved title
-    const existing = sessionsDb.getSessionById(convId);
     const existingCustomName = existing?.custom_name;
     const hasMeaningfulExistingName = Boolean(
       existingCustomName && !isGenericSessionName(existingCustomName)

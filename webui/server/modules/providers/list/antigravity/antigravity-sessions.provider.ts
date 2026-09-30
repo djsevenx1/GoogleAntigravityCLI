@@ -179,10 +179,8 @@ export class AntigravitySessionsProvider implements IProviderSessions {
                 );
               }
               if (Array.isArray(entry.tool_calls) && entry.tool_calls.length > 0) {
-                for (let tcIdx = 0; tcIdx < entry.tool_calls.length; tcIdx++) {
-                  const tc = entry.tool_calls[tcIdx];
-                  const stepIdx = entry.step_index != null ? entry.step_index : (entry.step_number != null ? entry.step_number : undefined);
-                  const callId = stepIdx != null ? `call-step-${stepIdx}` : generateMessageId('call');
+                for (const tc of entry.tool_calls) {
+                  const callId = generateMessageId('call');
                   const toolItem = { id: callId, name: tc.name };
                   pendingToolCalls.push(toolItem);
                   lastToolCall = toolItem;
@@ -214,14 +212,8 @@ export class AntigravitySessionsProvider implements IProviderSessions {
                 );
               }
             } else if (entry.type === 'GENERIC' && (entry.content || entry.error || entry.media)) {
+              const isError = entry.status === 'ERROR' || Boolean(entry.error);
               let toolContent = String(entry.error || entry.content || '');
-              const isError = Boolean(
-                entry.status === 'ERROR' ||
-                entry.error ||
-                toolContent.includes('"TOOL_ERROR"') ||
-                toolContent.includes('unexpected EOF') ||
-                toolContent.includes('Encountered error')
-              );
 
               // 关键增强：提取底层 media 数组中的图片并在聊天框展示
               if (Array.isArray(entry.media) && entry.media.length > 0) {
@@ -232,14 +224,6 @@ export class AntigravitySessionsProvider implements IProviderSessions {
                       toolContent += `\n\n![生成的图片](${m.uri})\n`;
                     }
                   }
-                }
-              }
-
-              // 自动补全 Markdown 图片标签（若只有本地图片路径字符串）
-              if (!toolContent.includes('![') && /(?:[^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i.test(toolContent)) {
-                const match = toolContent.match(/(?:saved at|保存至|路径[:：]?\s*)?([^\s"'<>\n]+\.(?:jpg|jpeg|png|webp|gif|svg))/i);
-                if (match && match[1]) {
-                  toolContent += `\n\n![生成的图片](${match[1]})\n`;
                 }
               }
 

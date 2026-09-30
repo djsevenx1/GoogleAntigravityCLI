@@ -75,7 +75,7 @@ const DEFAULT_LOCATIONS: BringYourLocation[] = [
 
 export default function AntigravityProxySection({ onNavigateToAccounts }: AntigravityProxySectionProps) {
   const [proxyEnabled, setProxyEnabled] = useState(true);
-  const [userAuth, setUserAuth] = useState('438889797@qq.com');
+  const [userAuth, setUserAuth] = useState('');
   const [password, setPassword] = useState('');
   const [hasPassword, setHasPassword] = useState(false);
   const [country, setCountry] = useState('United States');
@@ -120,7 +120,7 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
           const p = sData?.data?.proxy || sData?.proxy;
           if (p) {
             setProxyEnabled(p.enabled !== false && p.mode !== 'no');
-            setUserAuth(p.userAuth || '438889797@qq.com');
+            setUserAuth(p.userAuth || '');
             setHasPassword(Boolean(p.hasPassword));
             const currentCountry = p.country || 'United States';
             setCountry(currentCountry);
@@ -145,9 +145,6 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
           const data = stData?.data || stData;
           if (data && typeof data === 'object') {
             setProxyStatus(data);
-            if (data.userAuth) {
-              setUserAuth((prev) => prev || data.userAuth);
-            }
           }
         }
       } catch (_) {}
@@ -258,29 +255,6 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
     }
   };
 
-  const handleToggleMasterProxy = async (nextVal: boolean) => {
-    setProxyEnabled(nextVal);
-    setErrorMsg(null);
-    try {
-      const res = await api.providers.setAntigravityProxyToggle(nextVal ? 'yes' : 'no');
-      if (res.ok) {
-        const d = await readApiJson<any>(res);
-        const data = d?.data || d;
-        if (data?.status) {
-          setProxyStatus(data.status);
-        }
-        setSuccessMsg(`✓ SOCKS5 代理已瞬间${nextVal ? '启动就绪' : '关闭释放'}`);
-        setTimeout(() => setSuccessMsg(null), 3000);
-        setTimeout(() => void loadAllSettings(), 800);
-      } else {
-        const d = await readApiJson<any>(res);
-        setErrorMsg('切换代理失败: ' + (d?.data?.error || d?.error || '未知错误'));
-      }
-    } catch (e: any) {
-      setErrorMsg('切换异常: ' + (e?.message || '网络异常'));
-    }
-  };
-
   const handleSaveSettings = async () => {
     setIsSaving(true);
     setErrorMsg(null);
@@ -291,7 +265,7 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
       proxy: {
         enabled: proxyEnabled,
         mode: proxyEnabled ? 'yes' : 'no',
-        userAuth: userAuth.trim() ? userAuth.trim() : undefined,
+        userAuth: userAuth.trim(),
         password: password ? password : undefined,
         country: finalCountry || 'United States',
         region: region.trim(),
@@ -584,7 +558,7 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
               type="button"
               role="switch"
               aria-checked={proxyEnabled}
-              onClick={() => void handleToggleMasterProxy(!proxyEnabled)}
+              onClick={() => setProxyEnabled(!proxyEnabled)}
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/40 ${
                 proxyEnabled ? 'bg-emerald-500' : 'bg-muted'
               }`}
@@ -604,13 +578,15 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
             <div className="flex items-center gap-2">
               <span
                 className={`inline-block h-2 w-2 rounded-full ${
-                  proxyStatus?.socksListening !== false
+                  !proxyEnabled
+                    ? 'bg-amber-500'
+                    : proxyStatus?.socksListening
                     ? 'bg-emerald-500 animate-pulse'
-                    : 'bg-amber-500'
+                    : 'bg-rose-500'
                 }`}
               />
               <span className="font-semibold text-foreground">
-                {!proxyEnabled ? '⚡ 直连模式（19999 代理后台常驻 · 直连网络）' : '🌐 SOCKS5 代理已开启（代理加速）'}
+                {!proxyEnabled ? '⚡ 直连模式 (Direct Mode)' : '🌐 SOCKS5 代理已开启'}
               </span>
             </div>
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
@@ -621,10 +597,10 @@ export default function AntigravityProxySection({ onNavigateToAccounts }: Antigr
           <div className="text-[11.5px] text-muted-foreground flex items-center gap-2 flex-wrap">
             <span>
               状态:{' '}
-              {proxyStatus?.socksListening !== false ? (
-                <span className="font-medium text-emerald-600 dark:text-emerald-400">✓ 正常监听中 (127.0.0.1:19999) · 方案一长驻</span>
+              {proxyStatus?.socksListening ? (
+                <span className="font-medium text-emerald-600 dark:text-emerald-400">✓ 正常监听中 (127.0.0.1:19999)</span>
               ) : (
-                <span className="font-medium text-emerald-600 dark:text-emerald-400">✓ 正在拉起长驻代理 (127.0.0.1:19999)</span>
+                <span className="font-medium text-amber-600 dark:text-amber-400">待就绪（重启后守护循环自动拉起）</span>
               )}
             </span>
             <span>·</span>

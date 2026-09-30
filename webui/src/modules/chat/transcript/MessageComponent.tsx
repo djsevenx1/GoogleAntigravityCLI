@@ -16,7 +16,6 @@ import MessageSpeakControl from '@/modules/chat/transcript/MessageSpeakControl';
 import { useIsExportingTranscript } from '@/modules/chat/context/TranscriptRenderContext';
 import { MemoryCitations } from '@/modules/chat/transcript/MemoryCitations';
 import MessageQuotaFooter from '@/modules/chat/transcript/MessageQuotaFooter';
-import { humanizeErrorMessage } from '@/modules/chat/transcript/format-thought';
 
 type MessageComponentProps = {
   message: ChatMessage;
@@ -120,7 +119,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
               <ChatMessageFiles files={message.files} />
             )}
             {userCopyContent.trim().length > 0 || (!message.images?.length && !message.files?.length) ? (
-              <div className="group max-w-full rounded-2xl rounded-br-md border border-border/70 bg-card px-3.5 py-2.5 text-foreground shadow-sm dark:border-border sm:px-4">
+              <div className="group max-w-full rounded-2xl rounded-br-md border border-border/60 bg-muted/60 px-3 py-2 text-foreground shadow-sm dark:bg-gray-800/60 sm:px-4">
                 <div dir="auto" className="break-words font-serif text-sm">
                   <Markdown
                     breaks
@@ -366,13 +365,13 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
                         content={content}
                       />
                     ) : (
-                      <div className="my-1.5 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300 shadow-sm">
+                      <div className="my-1.5 rounded-xl border border-red-500/40 bg-red-500/10 p-4 font-mono text-xs text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300 shadow-sm">
                         <div className="flex items-start gap-2.5">
                           <svg className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                           </svg>
-                          <div className="flex-1 whitespace-pre-wrap break-words leading-relaxed font-sans text-xs">
-                            {humanizeErrorMessage(content)}
+                          <div className="flex-1 whitespace-pre-wrap break-words leading-relaxed font-mono">
+                            {content}
                           </div>
                         </div>
                       </div>

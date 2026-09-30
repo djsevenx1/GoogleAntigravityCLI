@@ -272,18 +272,20 @@ function runAntigravityTurnOnce(params) {
 3. 【持续攻坚不中断】：若遇到中间工具报错或异常，必须自主反思并连续自愈推进，直到任务目标完全达成。`;
         let prompt = command || '';
         if (prompt && !prompt.includes(CHINESE_ENFORCEMENT_PREFIX)) {
-            if (prompt.startsWith('/')) {
-                // 如果输入以斜杠命令开头（如 /boost、/plan 等），保留第一行命令头以便 CLI 正确识别斜杠扩展
-                const firstLineEnd = prompt.indexOf('\n');
-                if (firstLineEnd !== -1) {
-                    const firstLine = prompt.slice(0, firstLineEnd);
-                    const rest = prompt.slice(firstLineEnd + 1);
-                    const boostSection = isBoostCommand ? `${BOOST_MODE_INSTRUCTION}\n\n` : '';
-                    prompt = `${firstLine}\n\n${boostSection}${CHINESE_ENFORCEMENT_PREFIX}${rest}`;
+            if (isBoostCommand) {
+                if (prompt.startsWith('/')) {
+                    const firstLineEnd = prompt.indexOf('\n');
+                    if (firstLineEnd !== -1) {
+                        const firstLine = prompt.slice(0, firstLineEnd);
+                        const rest = prompt.slice(firstLineEnd + 1);
+                        prompt = `${firstLine}\n\n${BOOST_MODE_INSTRUCTION}\n\n${CHINESE_ENFORCEMENT_PREFIX}${rest}`;
+                    }
+                    else {
+                        prompt = `${prompt}\n\n${BOOST_MODE_INSTRUCTION}\n\n${CHINESE_ENFORCEMENT_PREFIX}`;
+                    }
                 }
                 else {
-                    const boostSection = isBoostCommand ? `\n\n${BOOST_MODE_INSTRUCTION}` : '';
-                    prompt = `${prompt}${boostSection}\n\n${CHINESE_ENFORCEMENT_PREFIX}`;
+                    prompt = `${BOOST_MODE_INSTRUCTION}\n\n${CHINESE_ENFORCEMENT_PREFIX}${prompt}`;
                 }
             }
             else {
@@ -593,17 +595,6 @@ function runAntigravityTurnOnce(params) {
                         onTextDelta(content);
                     }
                 }
-                // 核心修复：如果模型已完成纯文本回复（status 为 DONE，且无待执行的工具调用与 tool_info）
-                // 代表当前 Turn 的 Assistant 响应已经圆满终结，立即触发 finishSuccess() 解除看门狗，
-                // 彻底消除因交互式 REPL 进程常驻等待导致的 120s 看门狗超时杀进程与无限循环重试缺陷。
-                const isDoneModelResponse = (stepType === 'planner_response' || stepType === 'agent_response') &&
-                    String(update.status || '').toUpperCase() === 'DONE' &&
-                    (!update.tool_calls || (Array.isArray(update.tool_calls) && update.tool_calls.length === 0)) &&
-                    !update.tool_info;
-                if (isDoneModelResponse) {
-                    turnHasSucceeded = true;
-                    finishSuccess();
-                }
                 return;
             }
             // Handle 'result' or 'done' event
@@ -648,14 +639,14 @@ function runAntigravityTurnOnce(params) {
         if (prompt && antigravityProcess.stdin) {
             antigravityProcess.stdin.write(JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n');
         }
-        // 动态看门狗超时：Boost 或深度模式下放宽到 300 秒（5分钟），通用模式放宽到 120 秒（2分钟）
+        // 动态看门狗超时：Boost 或深度模式下放宽到 600 秒（10分钟），普通对话放宽到 360 秒（6分钟）
         let lastActivityTime = Date.now();
         const isBoostMode = Boolean((command && /^\/boost\b/i.test(command.trim())) ||
             (command && /\[🚀.*Boost/i.test(command)));
         const isLongRunningMode = Boolean(isBoostMode ||
             (command && /^\/(goal|plan|schedule)\b/i.test(command.trim())) ||
             effectiveEffort === 'high');
-        const INACTIVITY_TIMEOUT_MS = isLongRunningMode ? 300_000 : 120_000;
+        const INACTIVITY_TIMEOUT_MS = isLongRunningMode ? 600_000 : 360_000;
         watchdogTimer = setInterval(() => {
             if (isSettled) {
                 if (watchdogTimer) {
@@ -1042,74 +1033,80 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
         if (!finalResult) {
             throw new Error(lastError || 'Antigravity CLI execution failed after all retry attempts');
         }
-        // 🚀【核心突破】：Boost 攻坚模式与子代理长程连续推进循环
-        // 彻底根除“智能体只输出了一段规划或委派话语就停下来”的缺陷
+        // 🚀【长程攻坚推进控制】：
+        // 1. 普通对话（用户未显式输入 /boost）：单轮执行完毕后立即圆满收工交付，严禁无故在后台自动循环接力生成；
+        // 2. 只有当用户显式以 /boost 开头发起攻坚任务时，才进入受控的 Boost 阶段接力；
+        // 3. 严格限制阶段上限（最多 2 阶段），且只要模型输出了交付汇报或完成总结，坚决立即终止退出，彻底杜绝死循环！
         const isBoostModeCommand = Boolean(command && /^\/boost\b/i.test(command.trim()));
         let autonomousStep = 0;
-        const MAX_AUTONOMOUS_STEPS = 6;
-        while (autonomousStep < MAX_AUTONOMOUS_STEPS) {
-            const hasActiveSubagents = Boolean(finalResult?.spawnedSubagentsCount && finalResult.spawnedSubagentsCount > 0);
-            const outputText = (accumulatedText || '').trim();
-            const isExplicitlyFinished = /已全部完成|全部任务已完成|修改与验证均已完成|全部目标已达成|测试全部通过/i.test(outputText) &&
-                !hasActiveSubagents;
-            // 如果不是 Boost 模式且没有子代理派生，或者模型已明确确认全部完工，则结束推进
-            if (!isBoostModeCommand && !hasActiveSubagents) {
-                break;
-            }
-            if (isExplicitlyFinished) {
-                break;
-            }
-            autonomousStep++;
-            console.log(`[Antigravity Runtime] 🚀 Boost/子代理长程攻坚推进中 (第 ${autonomousStep}/${MAX_AUTONOMOUS_STEPS} 阶段)...`);
-            ws.send(createNormalizedMessage({
-                kind: 'text',
-                role: 'assistant',
-                content: `\n\n> 🚀 **【Boost 持续攻坚推进 · 第 ${autonomousStep} 阶段】** 检测到子代理或长程任务正在演进，系统正在自动接力推进下一步方案落地与严格验证，无需手动输入...`,
-                sessionId: capturedSessionId || sessionId || processKey,
-                provider: 'antigravity',
-            }));
-            // 等待 4 秒让子代理或后台任务完成推进
-            await new Promise((r) => setTimeout(r, 4000));
-            const continuePrompt = '【🚀 Boost 系统自主推进指令】：请检查已派生子代理与当前工作区所有改动的最新执行进展。若子代理已完成或有更新，请立即提取其工作成果并自主完成下一阶段的方案设计、代码编写、排错与严格自检验证，直到所有需求彻底达成；若全部任务已完成，请给出明确的最终汇报。';
-            try {
-                const nextTurnResult = await runAntigravityTurnOnce({
-                    command: continuePrompt,
-                    workingDir,
-                    model,
-                    effort,
-                    permissionMode,
-                    skipPermissions,
-                    images,
-                    files,
-                    capturedSessionId,
-                    accumulatedText,
-                    ws,
-                    currentSessionKey: capturedSessionId || sessionId || processKey,
-                    abortSignal: abortController.signal,
-                    onSessionDiscovered: (id) => {
-                        registerSession(id);
-                    },
-                    onTextDelta: (delta) => {
-                        accumulatedText += delta;
-                    },
-                    onFullText: (full) => {
-                        accumulatedText = full;
-                    },
-                    onProcessSpawned: (proc) => {
-                        const key = capturedSessionId || sessionId || processKey;
-                        activeAntigravityProcesses.set(key, proc);
-                        if (sessionId && sessionId !== key) {
-                            activeAntigravityProcesses.set(sessionId, proc);
-                        }
-                    },
-                });
-                finalResult = nextTurnResult;
-                if (nextTurnResult.conversationId)
-                    registerSession(nextTurnResult.conversationId);
-            }
-            catch (stepErr) {
-                console.warn('[Antigravity Runtime] 自主推进回合遇到异常，进入安全结算:', stepErr?.message);
-                break;
+        const MAX_AUTONOMOUS_STEPS = 2; // Boost 模式下最多补充 2 次接力，杜绝无限空转
+        if (isBoostModeCommand) {
+            while (autonomousStep < MAX_AUTONOMOUS_STEPS) {
+                if (abortController.signal.aborted)
+                    break;
+                const outputText = (accumulatedText || '').trim();
+                const lastContent = (finalResult?.lastAssistantContent || outputText).trim();
+                // 只要输出了完成信号或交付总结，无论如何坚决立即退出，绝不再次唤醒
+                const isExplicitlyFinished = /交付汇报|核查报告|已全部完成|全部任务已完成|修改与验证均已完成|全部目标已达成|测试全部通过|已成功为您实现|代码已编写完成并验证|所有任务均已闭环完成/i.test(lastContent);
+                if (isExplicitlyFinished) {
+                    break;
+                }
+                // 只有模型明确输出未完结标志且字数极少（例如只输出了简短规划却没有任何工具执行），才进行下一阶段推进
+                const hasUnfinishedIndicator = /(?:正在进行|准备开始执行|正在为您编写|待继续推进)/i.test(lastContent);
+                if (!hasUnfinishedIndicator) {
+                    break;
+                }
+                autonomousStep++;
+                console.log(`[Antigravity Runtime] 🚀 Boost 攻坚长程接力推进中 (第 ${autonomousStep}/${MAX_AUTONOMOUS_STEPS} 阶段)...`);
+                ws.send(createNormalizedMessage({
+                    kind: 'text',
+                    role: 'assistant',
+                    content: `\n\n> 🚀 **【Boost 持续攻坚 · 第 ${autonomousStep} 阶段】** 检测到攻坚任务仍在演进中，系统正在自动接力执行下一步操作与验证...`,
+                    sessionId: capturedSessionId || sessionId || processKey,
+                    provider: 'antigravity',
+                }));
+                await new Promise((r) => setTimeout(r, 2000));
+                const continuePrompt = '【Boost 攻坚指令】：请继续推进方案落地与代码验证，直到全部需求达成；若已完成，请直接输出最终交付总结。';
+                try {
+                    const nextTurnResult = await runAntigravityTurnOnce({
+                        command: continuePrompt,
+                        workingDir,
+                        model,
+                        effort,
+                        permissionMode,
+                        skipPermissions,
+                        images,
+                        files,
+                        capturedSessionId,
+                        accumulatedText,
+                        ws,
+                        currentSessionKey: capturedSessionId || sessionId || processKey,
+                        abortSignal: abortController.signal,
+                        onSessionDiscovered: (id) => {
+                            registerSession(id);
+                        },
+                        onTextDelta: (delta) => {
+                            accumulatedText += delta;
+                        },
+                        onFullText: (full) => {
+                            accumulatedText = full;
+                        },
+                        onProcessSpawned: (proc) => {
+                            const key = capturedSessionId || sessionId || processKey;
+                            activeAntigravityProcesses.set(key, proc);
+                            if (sessionId && sessionId !== key) {
+                                activeAntigravityProcesses.set(sessionId, proc);
+                            }
+                        },
+                    });
+                    finalResult = nextTurnResult;
+                    if (nextTurnResult.conversationId)
+                        registerSession(nextTurnResult.conversationId);
+                }
+                catch (stepErr) {
+                    console.warn('[Antigravity Runtime] Boost 推进遇到异常，进入安全结算:', stepErr?.message);
+                    break;
+                }
             }
         }
         const durationSec = Math.round((Date.now() - turnStartTime) / 100) / 10;
@@ -1182,6 +1179,63 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
         // auth/token timeout, proxy EOF) stay fatal red errors below.
         const isRecoverableStreamPause = /stream was interrupted.*please continue|please continue the task|stream was interrupted|subscriber fell behind updates|stalled for|interrupted before the response finished/i.test(rawErrMsg);
         if (isRecoverableStreamPause) {
+            if (!abortController.signal.aborted && capturedSessionId) {
+                console.warn('[Antigravity Runtime] 捕获到流中断抖动，系统立即自动无缝发起自愈接力推进...');
+                ws.send(createNormalizedMessage({
+                    kind: 'text',
+                    role: 'assistant',
+                    content: '\n\n> ⏳ **【链路自愈续接】** 检测到上游连接偶发抖动，系统正在全自动接力续跑推进未完任务，无需手动输入...',
+                    sessionId: finalSessionId,
+                    provider: 'antigravity',
+                }));
+                try {
+                    await new Promise((r) => setTimeout(r, 2500));
+                    const recoveryResult = await runAntigravityTurnOnce({
+                        command: '上游链路已平稳恢复，请继续完成上一轮操作。',
+                        workingDir,
+                        model,
+                        effort,
+                        permissionMode,
+                        skipPermissions,
+                        images,
+                        files,
+                        capturedSessionId,
+                        accumulatedText,
+                        ws,
+                        currentSessionKey: capturedSessionId || sessionId || processKey,
+                        abortSignal: abortController.signal,
+                        onSessionDiscovered: (id) => registerSession(id),
+                        onTextDelta: (delta) => { accumulatedText += delta; },
+                        onFullText: (full) => { accumulatedText = full; },
+                        onProcessSpawned: (proc) => {
+                            const key = capturedSessionId || sessionId || processKey;
+                            activeAntigravityProcesses.set(key, proc);
+                        },
+                    });
+                    if (recoveryResult) {
+                        const durationSec = Math.round((Date.now() - turnStartTime) / 100) / 10;
+                        const cleanAcc = (accumulatedText || '').replace(/[\u200b\s]/g, '').trim();
+                        const tokens = Math.min(Math.max(Math.round(cleanAcc.length / 3.2), 200), 25000);
+                        const fastQuota = antigravityAccountsService.deductLocalQuota(model, tokens) || antigravityAccountsService.getLiveQuotaCached();
+                        const completeMessage = createCompleteMessage({
+                            provider: 'antigravity',
+                            sessionId: finalSessionId,
+                            exitCode: 0,
+                        });
+                        if (fastQuota)
+                            completeMessage.quotaSnapshot = fastQuota;
+                        completeMessage.initialSessionId = sessionId || processKey;
+                        completeMessage.actualSessionId = finalSessionId;
+                        ws.send(completeMessage);
+                        notifyTerminalState({ code: 0 });
+                        cleanupProcessTracking();
+                        return { conversationId: capturedSessionId, exitCode: 0 };
+                    }
+                }
+                catch (recErr) {
+                    console.warn('[Antigravity Runtime] 自动续接回合遇到异常，进入安全兜底:', recErr?.message);
+                }
+            }
             if (!abortController.signal.aborted) {
                 ws.send(createNormalizedMessage({
                     kind: 'text',

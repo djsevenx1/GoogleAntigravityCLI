@@ -81,12 +81,12 @@ export const sessionsDb = {
            updated_at = COALESCE(?, CURRENT_TIMESTAMP),
            project_path = ?,
            jsonl_path = ?,
-           isArchived = CASE WHEN ? IS NULL OR julianday(?) > julianday(updated_at) THEN 0 ELSE isArchived END,
+           isArchived = isArchived,
            custom_name = CASE
              WHEN session_id <> provider_session_id AND custom_name IS NOT NULL THEN custom_name
              ELSE COALESCE(?, custom_name)
            END
-         WHERE session_id = ?`).run(provider, updatedAtValue, normalizedProjectPath, targetJsonlPath, updatedAtValue, updatedAtValue, targetCustomName, existing.session_id);
+         WHERE session_id = ?`).run(provider, updatedAtValue, normalizedProjectPath, targetJsonlPath, targetCustomName, existing.session_id);
             return existing.session_id;
         }
         // Sessions created outside the app (directly via the provider CLI) are
@@ -106,7 +106,7 @@ export const sessionsDb = {
              THEN sessions.jsonl_path
            ELSE excluded.jsonl_path
          END,
-         isArchived = CASE WHEN ? IS NULL OR julianday(excluded.updated_at) > julianday(sessions.updated_at) THEN 0 ELSE sessions.isArchived END,
+         isArchived = sessions.isArchived,
          custom_name = CASE
            WHEN sessions.session_id <> sessions.provider_session_id AND sessions.custom_name IS NOT NULL
              THEN sessions.custom_name
@@ -115,7 +115,7 @@ export const sessionsDb = {
                 AND NOT (sessions.custom_name LIKE 'Antigravity %' OR sessions.custom_name LIKE 'Untitled %' OR sessions.custom_name LIKE 'OpenCode %')
              THEN sessions.custom_name
            ELSE COALESCE(excluded.custom_name, sessions.custom_name)
-         END`).run(providerSessionId, provider, providerSessionId, customName ?? null, normalizedProjectPath, jsonlPath ?? null, createdAtValue, updatedAtValue, updatedAtValue);
+         END`).run(providerSessionId, provider, providerSessionId, customName ?? null, normalizedProjectPath, jsonlPath ?? null, createdAtValue, updatedAtValue);
         return providerSessionId;
     },
     /**
@@ -510,6 +510,11 @@ export const sessionsDb = {
     },
     deleteSessionById(sessionId) {
         const db = getConnection();
+        try {
+            db.prepare('DELETE FROM scheduled_messages WHERE session_id = ?').run(sessionId);
+            db.prepare('DELETE FROM session_drafts WHERE draft_scope LIKE ?').run(`%${sessionId}%`);
+        }
+        catch (_) { }
         return db.prepare('DELETE FROM sessions WHERE session_id = ?').run(sessionId).changes > 0;
     },
     /**

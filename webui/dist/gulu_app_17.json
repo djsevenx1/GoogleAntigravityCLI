@@ -1,0 +1,73 @@
+{
+  "cache_time": 7200,
+  "api_site": {
+    "xgulu4k": {
+      "name": "新咕噜4K",
+      "api": "https://cj.lziapi.com/api.php/provide/vod/"
+    },
+    "vip4k": {
+      "name": "VIP4K",
+      "api": "https://jyzyapi.com/api.php/provide/vod/"
+    },
+    "jingbao4k": {
+      "name": "鲸宝4K",
+      "api": "https://www.hongniuzy2.com/api.php/provide/vod/"
+    },
+    "feile4k": {
+      "name": "菲乐4K",
+      "api": "https://bfzyapi.com/api.php/provide/vod/"
+    },
+    "jingpin2k": {
+      "name": "精品2K",
+      "api": "https://api.guangsuapi.com/api.php/provide/vod/"
+    },
+    "kafei": {
+      "name": "咖啡",
+      "api": "https://api.xinlangapi.com/xinlangapi.php/provide/vod/"
+    },
+    "mayi": {
+      "name": "蚂蚁",
+      "api": "https://ikunzyapi.com/api.php/provide/vod/"
+    },
+    "shenhua": {
+      "name": "神话",
+      "api": "https://hhzyapi.com/api.php/provide/vod/"
+    },
+    "qiqu": {
+      "name": "☆奇趣☆",
+      "api": "https://api.ukuapi.com/api.php/provide/vod/"
+    },
+    "xunfei": {
+      "name": "☆讯飞☆",
+      "api": "https://subocaiji.com/api.php/provide/vod/"
+    },
+    "kumeng": {
+      "name": "☆酷萌☆",
+      "api": "https://zuidazy.me/api.php/provide/vod/"
+    },
+    "guozhi": {
+      "name": "☆果汁☆",
+      "api": "https://bfzyapi.com/api.php/provide/vod/"
+    },
+    "tiantang": {
+      "name": "天堂",
+      "api": "https://jszyapi.com/api.php/provide/vod/"
+    },
+    "baofeng": {
+      "name": "暴风",
+      "api": "https://bfzyapi.com/api.php/provide/vod/"
+    },
+    "liangzi": {
+      "name": "量子",
+      "api": "https://cj.lziapi.com/api.php/provide/vod/"
+    },
+    "feifan": {
+      "name": "非凡",
+      "api": "https://api.guangsuapi.com/api.php/provide/vod/"
+    },
+    "xiaoxiong": {
+      "name": "小熊",
+      "api": "https://jszyapi.com/api.php/provide/vod/"
+    }
+  }
+}
