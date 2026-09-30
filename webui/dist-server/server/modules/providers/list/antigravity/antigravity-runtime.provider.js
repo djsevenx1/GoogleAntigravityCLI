@@ -7,7 +7,7 @@ import { appendFilesInputTag, appendImagesInputTag, normalizeAttachmentDescripto
 import { notifyRunFailed, notifyRunStopped } from '../../../../modules/notifications/index.js';
 import { createCompleteMessage, createNormalizedMessage, } from '../../../../shared/utils.js';
 import { resolveAntigravityBinary } from './antigravity-auth.provider.js';
-import { getProxyToggle, resolveAntigravityProxyEnv } from './antigravity-proxy.js';
+import { getProxyToggle, resolveAntigravityProxyEnv, notifyTurnStarted, notifyTurnEnded, } from './antigravity-proxy.js';
 import { antigravityAccountsService } from './antigravity-accounts.service.js';
 import { localizeEnglishThought, humanizeAntigravityError } from './antigravity-chinese-filter.js';
 export { localizeEnglishThought, humanizeAntigravityError };
@@ -858,6 +858,13 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
     if (sessionId && sessionId !== processKey) {
         activeAbortControllers.set(sessionId, abortController);
     }
+    // 触发 Scale-to-Zero 按需唤醒与活跃状态记录
+    try {
+        await notifyTurnStarted();
+    }
+    catch (wakeErr) {
+        console.warn('[Scale-to-Zero] 代理唤醒自愈提示:', wakeErr?.message);
+    }
     const registerSession = (nextSessionId) => {
         if (!nextSessionId || capturedSessionId === nextSessionId)
             return;
@@ -1361,6 +1368,9 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
         notifyTerminalState({ code: 1, error: humanizedMsg });
         cleanupProcessTracking();
         throw err;
+    }
+    finally {
+        notifyTurnEnded();
     }
 }
 export const antigravityRuntime = {

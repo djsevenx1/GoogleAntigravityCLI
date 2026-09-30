@@ -89,6 +89,12 @@ export function writeUrnAuth(vals) {
         catch (_) { }
     }
 }
+const SLEEP_LOCK_FILE = '/tmp/urn-sleeping.lock';
+const DEFAULT_IDLE_TIMEOUT_MS = 60_000; // 空闲 60 秒无对话自动断开进入休眠
+let activeTurnsCount = 0;
+let idleTimer = null;
+let idleState = 'sleeping';
+let idleTargetTimestamp = 0;
 export function getProxyStatus() {
     const urn = readUrnAuth();
     const proxyToggle = getProxyToggle();
@@ -122,6 +128,17 @@ export function getProxyStatus() {
         }
     }
     catch (_) { }
+    const isListening = socksListening;
+    let currentIdleState = idleState;
+    if (!isListening) {
+        currentIdleState = 'sleeping';
+    }
+    else if (activeTurnsCount > 0) {
+        currentIdleState = 'active';
+    }
+    const idleSecondsRemaining = currentIdleState === 'idle' && idleTargetTimestamp > Date.now()
+        ? Math.max(0, Math.round((idleTargetTimestamp - Date.now()) / 1000))
+        : 0;
     return {
         enabled: proxyToggle === 'yes',
         mode: proxyToggle,
@@ -136,6 +153,10 @@ export function getProxyStatus() {
         quantum: urn.quantum,
         activeProviderCount,
         activeCountry,
+        scaleToZero: true,
+        idleState: currentIdleState,
+        idleSecondsRemaining,
+        activeTurns: activeTurnsCount,
     };
 }
 export function restartProxy() {
@@ -375,5 +396,107 @@ export async function testProxyConnectivity(targetMode) {
             });
         });
     });
+}
+/**
+ * 确保 SOCKS5 代理处于唤醒并监听状态（按需唤醒 Scale-up）
+ * 供 AntigravityRuntimeProvider 与主动连接时调用
+ */
+export async function ensureProxyAwake() {
+    const toggle = getProxyToggle();
+    if (toggle === 'no')
+        return false;
+    try {
+        if (fs.existsSync(SLEEP_LOCK_FILE)) {
+            fs.unlinkSync(SLEEP_LOCK_FILE);
+        }
+    }
+    catch (_) { }
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+    }
+    idleTargetTimestamp = 0;
+    idleState = 'active';
+    if (!isSocksListening(19999)) {
+        console.log('[Scale-to-Zero] ⚡ 收到对话调用请求，按需自动唤醒 SOCKS5 代理...');
+        const res = startUrnSocksInstant();
+        return res.socksListening;
+    }
+    return true;
+}
+/**
+ * 收到新回合任务，登记活跃并清除休眠倒计时
+ * 供 AntigravityRuntimeProvider 在回合开始时调用
+ */
+export async function notifyTurnStarted() {
+    const toggle = getProxyToggle();
+    if (toggle === 'no')
+        return;
+    activeTurnsCount++;
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+    }
+    idleTargetTimestamp = 0;
+    idleState = 'active';
+    await ensureProxyAwake();
+}
+/**
+ * 回合结束，递减活跃任务计数。若全部空闲，则启动 60 秒休眠倒计时
+ * 供 AntigravityRuntimeProvider 在回合结束（finally）时调用
+ */
+export function notifyTurnEnded() {
+    const toggle = getProxyToggle();
+    if (toggle === 'no')
+        return;
+    activeTurnsCount = Math.max(0, activeTurnsCount - 1);
+    if (activeTurnsCount === 0) {
+        idleState = 'idle';
+        idleTargetTimestamp = Date.now() + DEFAULT_IDLE_TIMEOUT_MS;
+        if (idleTimer)
+            clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+            if (activeTurnsCount === 0) {
+                sleepProxyNow();
+            }
+        }, DEFAULT_IDLE_TIMEOUT_MS);
+    }
+}
+/**
+ * 立即休眠代理（释放连接、退还住宅节点，流量归零）
+ * 供空闲倒计时触发或路由手动调用
+ */
+export function sleepProxyNow() {
+    if (activeTurnsCount > 0) {
+        return { ok: false, message: '当前有活跃的对话任务正在处理中，暂不可休眠' };
+    }
+    try {
+        fs.writeFileSync(SLEEP_LOCK_FILE, String(Date.now()), 'utf8');
+    }
+    catch (_) { }
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+    }
+    idleTargetTimestamp = 0;
+    idleState = 'sleeping';
+    stopUrnSocksInstant();
+    console.log('[Scale-to-Zero] 🌿 连续 60 秒无活跃对话，SOCKS5 代理已自动进入空闲休眠状态（已切断住宅链路，0心跳/0流量消耗）');
+    return { ok: true, message: 'SOCKS5 代理已进入空闲休眠（已断开住宅节点，0 流量消耗）' };
+}
+/**
+ * 手动唤醒代理
+ * 供管理面板路由调用
+ */
+export async function wakeProxyNow() {
+    try {
+        if (fs.existsSync(SLEEP_LOCK_FILE)) {
+            fs.unlinkSync(SLEEP_LOCK_FILE);
+        }
+    }
+    catch (_) { }
+    const res = startUrnSocksInstant();
+    idleState = 'active';
+    return { ok: res.ok, message: res.ok ? '代理已成功唤醒就绪' : '唤醒失败: ' + res.message };
 }
 //# sourceMappingURL=antigravity-proxy.js.map
