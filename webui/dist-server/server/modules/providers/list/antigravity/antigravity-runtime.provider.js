@@ -317,10 +317,18 @@ function runAntigravityTurnOnce(params) {
         onProcessSpawned(antigravityProcess);
         let isSettled = false;
         let watchdogTimer = null;
+        let settleDebounceTimer = null;
         let turnConversationId = capturedSessionId;
         let turnUsage = undefined;
         let spawnedSubagentsCount = 0;
+        const clearSettleTimer = () => {
+            if (settleDebounceTimer) {
+                clearTimeout(settleDebounceTimer);
+                settleDebounceTimer = null;
+            }
+        };
         const onAbort = () => {
+            clearSettleTimer();
             if (watchdogTimer) {
                 clearInterval(watchdogTimer);
                 watchdogTimer = null;
@@ -340,6 +348,7 @@ function runAntigravityTurnOnce(params) {
                 return;
             isSettled = true;
             abortSignal.removeEventListener('abort', onAbort);
+            clearSettleTimer();
             if (watchdogTimer) {
                 clearInterval(watchdogTimer);
                 watchdogTimer = null;
@@ -437,6 +446,7 @@ function runAntigravityTurnOnce(params) {
                 // Tool calls and tool execution results
                 const toolInfo = update.tool_info;
                 if (toolInfo && toolInfo.name) {
+                    clearSettleTimer();
                     if (toolInfo.name === 'invoke_subagent' || toolInfo.name === 'manage_subagents' || toolInfo.name === 'define_subagent') {
                         spawnedSubagentsCount++;
                     }
@@ -553,6 +563,24 @@ function runAntigravityTurnOnce(params) {
                         provider: 'antigravity',
                     }));
                 }
+                const scheduleSettleCheck = (delayMs = 3000) => {
+                    clearSettleTimer();
+                    if (isSettled || lastActiveToolCall)
+                        return;
+                    settleDebounceTimer = setTimeout(() => {
+                        if (isSettled || lastActiveToolCall)
+                            return;
+                        if (turnEmitted.trim().length > 0) {
+                            console.log(`[Antigravity Runtime] ✅ 文本生成完毕且已静默 ${delayMs}ms，安全触发回合完成结算交付...`);
+                            turnHasSucceeded = true;
+                            finishSuccess();
+                        }
+                    }, delayMs);
+                };
+                const isStepDone = update.state === 'DONE' ||
+                    update.status === 'DONE' ||
+                    update.state === 'COMPLETED' ||
+                    update.status === 'COMPLETED';
                 // Text delta streaming with delta deduplication
                 if (typeof update.text_delta === 'string' && update.text_delta) {
                     const delta = update.text_delta;
@@ -565,6 +593,12 @@ function runAntigravityTurnOnce(params) {
                     }));
                     turnEmitted += delta;
                     onTextDelta(delta);
+                    if (isStepDone) {
+                        scheduleSettleCheck(2000);
+                    }
+                    else {
+                        scheduleSettleCheck(4000);
+                    }
                 }
                 else if ((!stepType || stepType === 'agent_response' || stepType === 'planner_response') &&
                     typeof update.content === 'string' &&
@@ -594,6 +628,15 @@ function runAntigravityTurnOnce(params) {
                         turnEmitted += content;
                         onTextDelta(content);
                     }
+                    if (isStepDone) {
+                        scheduleSettleCheck(2000);
+                    }
+                    else {
+                        scheduleSettleCheck(4000);
+                    }
+                }
+                else if (isStepDone && (!stepType || stepType === 'agent_response' || stepType === 'planner_response') && turnEmitted.trim().length > 0) {
+                    scheduleSettleCheck(2000);
                 }
                 return;
             }
@@ -656,13 +699,27 @@ function runAntigravityTurnOnce(params) {
                 return;
             }
             const idleMs = Date.now() - lastActivityTime;
+            // 核心防假死兜底 1：若模型已输出完整回复且无活动工具，静止超过 12 秒直接圆满结算交付，绝不让前端挂在“计算中”！
+            if (turnEmitted.trim().length > 0 && !lastActiveToolCall && idleMs > 12_000) {
+                console.log(`[Antigravity Runtime] ✅ 模型已输出完整文本且处于静止状态超过 ${Math.round(idleMs / 1000)}s，主动圆满结算退出，解除前端悬挂...`);
+                turnHasSucceeded = true;
+                finishSuccess();
+                return;
+            }
             if (idleMs > INACTIVITY_TIMEOUT_MS) {
-                console.warn(`[Antigravity Runtime] 🚨 流活跃看门狗触发: 连续 ${Math.round(idleMs / 1000)} 秒无输出（底层卡在内部重试或断流），强行破局拉起自愈...`);
                 if (watchdogTimer) {
                     clearInterval(watchdogTimer);
                     watchdogTimer = null;
                 }
-                lastStderrError = `stream was interrupted: inactivity watchdog triggered after ${Math.round(INACTIVITY_TIMEOUT_MS / 1000)}s`;
+                // 核心防假死兜底 2：若达到超时上限但已输出了内容，作为成功收工交付
+                if (turnEmitted.trim().length > 0) {
+                    console.log(`[Antigravity Runtime] 🚨 活跃看门狗到达上限，但模型已输出内容 (${turnEmitted.length} 字)，作为成功收工交付`);
+                    turnHasSucceeded = true;
+                    finishSuccess();
+                    return;
+                }
+                console.warn(`[Antigravity Runtime] 🚨 活跃看门狗触发: 连续 ${Math.round(idleMs / 1000)} 秒无输出且未生成任何内容，终止底层进程...`);
+                lastStderrError = `stream timed out: no output produced after ${Math.round(INACTIVITY_TIMEOUT_MS / 1000)}s`;
                 if (getProxyToggle() === 'yes') {
                     try {
                         exec('pkill -f "urnetwork/urnetwork-socks" 2>/dev/null || true');
@@ -674,7 +731,7 @@ function runAntigravityTurnOnce(params) {
                 }
                 catch (_) { }
             }
-        }, 5_000);
+        }, 3_000);
         const stdoutDecoder = new StringDecoder('utf8');
         antigravityProcess.stdout?.on('data', (chunk) => {
             lastActivityTime = Date.now();
@@ -898,6 +955,20 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
             catch (err) {
                 if (abortController.signal.aborted)
                     throw err;
+                // 核心终极防护：如果已经积累了模型回复文本，说明本轮核心回复已经完整输出交付给前端！
+                // 无论底层发生任何末端断开、超时或关闭，坚决不得重试，更严禁重新注入“继续”导致重复生成！
+                if (accumulatedText && accumulatedText.trim().length > 0) {
+                    console.log(`[Antigravity Runtime] ✅ 当前回合已成功产出完整回复 (${accumulatedText.trim().length} 字符)，虽有末端静默或关闭信号，直接圆满结算交付，绝不重复生成！`);
+                    break;
+                }
+                const errMsg = String(err?.message || err || '');
+                lastError = errMsg;
+                // 活跃看门狗超时：直接安全退出，坚决不进行网络重试更不发“继续”
+                const isWatchdogTimeout = /watchdog|timed out|inactivity/i.test(errMsg);
+                if (isWatchdogTimeout) {
+                    console.warn(`[Antigravity Runtime] 活跃看门狗静默超时，终止无谓重试并安全退出: ${errMsg}`);
+                    break;
+                }
                 if (err instanceof QuotaExhaustedError) {
                     const currentSessionId = capturedSessionId || sessionId || null;
                     console.warn(`[Antigravity Runtime] 🚨 触发 429 速率/配额限制 (回合尝试 ${attempt}/${TOTAL_MAX_ATTEMPTS})，保持当前账号启动智能时间退避自愈...`);
@@ -946,8 +1017,6 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
                     cleanupProcessTracking();
                     return { conversationId: capturedSessionId, exitCode: 1 };
                 }
-                const errMsg = String(err?.message || err || '');
-                lastError = errMsg;
                 // 1. Trajectory not found / conversation not found
                 if (/trajectory not found|conversation not found/i.test(errMsg)) {
                     console.warn(`[Antigravity Runtime] Trajectory ${capturedSessionId} not found, resetting conversationId and retrying turn fresh`);
@@ -980,8 +1049,8 @@ export async function spawnAntigravity(command, options = {}, ws, context) {
                     }
                     continue;
                 }
-                const isStreamInterrupted = /stream was interrupted|please continue the task|subscriber fell behind updates|stalled for|interrupted before the response finished/i.test(errMsg);
-                const isProxyEOF = /EOF|connection reset by peer|stream ended|unexpected EOF|stream was interrupted|please continue the task|subscriber fell behind updates|stalled for|interrupted before the response finished/i.test(errMsg);
+                const isStreamInterrupted = !isWatchdogTimeout && /stream was interrupted|please continue the task|subscriber fell behind updates|stalled for|interrupted before the response finished/i.test(errMsg);
+                const isProxyEOF = !isWatchdogTimeout && /EOF|connection reset by peer|stream ended|unexpected EOF|stream was interrupted|please continue the task|subscriber fell behind updates|stalled for|interrupted before the response finished/i.test(errMsg);
                 if (isProxyEOF && attempt < TOTAL_MAX_ATTEMPTS) {
                     const isProxy = getProxyToggle() === 'yes';
                     if (isStreamInterrupted) {

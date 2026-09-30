@@ -36,6 +36,15 @@ if [ -x "$URNETWORK_SOCKS" ]; then
   (
     export LD_LIBRARY_PATH="$(pwd)/urnetwork"
     while true; do
+      TOGGLE=$(cat "$(pwd)/proxy-toggle.txt" 2>/dev/null || echo "yes")
+      if [ "$TOGGLE" = "no" ] || [ "$TOGGLE" = "off" ] || [ "$TOGGLE" = "false" ]; then
+        if ss -tlnp 2>/dev/null | grep -q ":${URNETWORK_SOCKS_PORT} "; then
+          pkill -9 -f "urnetwork-socks" 2>/dev/null || true
+        fi
+        sleep 3
+        continue
+      fi
+
       if ! ss -tlnp 2>/dev/null | grep -q ":${URNETWORK_SOCKS_PORT} "; then
         # 自动自愈兜底：若凭据被写空或缺失，强制填回用户正确账号与密码
         [ -f "$URN_AUTH_FILE" ] && source "$URN_AUTH_FILE" 2>/dev/null || true
