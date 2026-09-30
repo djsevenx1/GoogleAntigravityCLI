@@ -49,11 +49,11 @@ if [ -x "$URNETWORK_SOCKS" ]; then
         # 自动自愈兜底：若凭据被写空或缺失，强制填回用户正确账号与密码
         [ -f "$URN_AUTH_FILE" ] && source "$URN_AUTH_FILE" 2>/dev/null || true
         if [ -z "${URN_USER_AUTH:-}" ] || [ -z "${URN_PASSWORD:-}" ]; then
-          export URN_USER_AUTH="438889797@qq.com"
+          export URN_USER_AUTH="xiaopangxia@vip.qq.com"
           export URN_PASSWORD="Xiaoliguang520."
           cat << 'EOF' > "$URN_AUTH_FILE"
 # URnetwork SOCKS5 代理凭据（由系统设置面板写入，.gitignore 忽略不外传）
-URN_USER_AUTH="438889797@qq.com"
+URN_USER_AUTH="xiaopangxia@vip.qq.com"
 URN_PASSWORD="Xiaoliguang520."
 URN_COUNTRY="United States"
 URN_REGION=""

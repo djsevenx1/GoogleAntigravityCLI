@@ -10,8 +10,8 @@ const PROXY_TOGGLE_PATHS = [
 
 const URN_AUTH_PATHS = [
   path.join(process.cwd(), 'data', 'urn-auth.env'),
-  '/vol5/@apphome/claude code/workspace/claudecodeui/data/urn-auth.env',
   '/vol1/@apphome/GoogleAntigravityCLI/data/urn-auth.env',
+  '/vol5/@apphome/claude code/workspace/claudecodeui/data/urn-auth.env',
 ];
 
 export type UrnAuthConfig = {
@@ -260,11 +260,16 @@ export function startUrnSocksInstant(): { ok: boolean; message: string; socksLis
 
 export function stopUrnSocksInstant(): { ok: boolean; message: string; socksListening: boolean } {
   try {
-    execFileSync('pkill', ['-9', '-f', 'urnetwork/urnetwork-socks'], { encoding: 'utf8' });
+    // 先优雅退出向平台退还合约质押，再兜底杀停
+    try {
+      execFileSync('pkill', ['-15', '-f', 'urnetwork-socks'], { encoding: 'utf8' });
+      execFileSync('sleep', ['0.3']);
+    } catch (_) {}
+    execFileSync('pkill', ['-9', '-f', 'urnetwork-socks'], { encoding: 'utf8' });
     execFileSync('sleep', ['0.1']);
   } catch (_) {}
   const listening = isSocksListening(19999);
-  return { ok: !listening, message: 'SOCKS5 代理已瞬间关闭', socksListening: listening };
+  return { ok: !listening, message: 'SOCKS5 代理已彻底关闭，连接已释放', socksListening: listening };
 }
 
 export function setProxyToggle(mode: 'yes' | 'no' | string): 'yes' | 'no' {
@@ -281,10 +286,13 @@ export function setProxyToggle(mode: 'yes' | 'no' | string): 'yes' | 'no' {
     } catch (_) {}
   }
 
-  // 架构原则：无论开关是直连还是代理，19999 端口服务在后台始终保持打开常驻！
-  // 开关仅仅控制系统流量走直连还是走代理。
-  if (!isSocksListening(19999)) {
-    startUrnSocksInstant();
+  // 严格执行用户意志：用户关闭则彻底退出释放合约；用户开启才启动守护
+  if (norm === 'no') {
+    stopUrnSocksInstant();
+  } else {
+    if (!isSocksListening(19999)) {
+      startUrnSocksInstant();
+    }
   }
 
   return norm;
